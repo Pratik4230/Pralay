@@ -1,4 +1,10 @@
-import { pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uuid,
+} from "drizzle-orm/pg-core";
 
 import { contextScopeEnum } from "./enums.js";
 import { projects } from "./projects.js";
@@ -22,7 +28,5 @@ export const userWorkspacePreferences = pgTable(
       .defaultNow()
       .notNull(),
   },
-  (table) => [
-    primaryKey({ columns: [table.userId, table.workspaceId] }),
-  ],
+  (table) => [primaryKey({ columns: [table.userId, table.workspaceId] })],
 );
