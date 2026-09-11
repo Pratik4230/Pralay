@@ -2,14 +2,20 @@ import { swaggerUI } from "@hono/swagger-ui";
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { sql } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
+
+import { auth } from "@repo/auth";
 import { db } from "@repo/db";
 import {
   apiErrorSchema,
   createHealthResponse,
   healthResponseSchema,
+  meResponseSchema,
 } from "@repo/validators";
 
-const app = new OpenAPIHono({
+import { sessionMiddleware, type AuthVariables } from "./middleware/session.js";
+import { meRoute } from "./routes/me.js";
+
+const app = new OpenAPIHono<{ Variables: AuthVariables }>({
   defaultHook: (result, c) => {
     if (!result.success) {
       return c.json(
@@ -52,6 +58,8 @@ app.onError((err, c) => {
   );
 });
 
+app.all("/api/auth/*", (c) => auth.handler(c.req.raw));
+
 const healthRoute = createRoute({
   method: "get",
   path: "/health",
@@ -87,6 +95,48 @@ app.openapi(healthRoute, async (c) => {
   }
 
   return c.json(createHealthResponse(), 200);
+});
+
+app.use("/api/v1/*", sessionMiddleware);
+
+app.openapi(meRoute, (c) => {
+  const session = c.get("session");
+
+  if (!session) {
+    return c.json(
+      {
+        error: {
+          code: "UNAUTHORIZED",
+          message: "Authentication required",
+        },
+      },
+      401,
+    );
+  }
+
+  const payload = meResponseSchema.parse({
+    user: {
+      id: session.user.id,
+      name: session.user.name,
+      email: session.user.email,
+      emailVerified: session.user.emailVerified,
+      image: session.user.image ?? null,
+      createdAt: new Date(session.user.createdAt).toISOString(),
+      updatedAt: new Date(session.user.updatedAt).toISOString(),
+    },
+    session: {
+      id: session.session.id,
+      expiresAt: new Date(session.session.expiresAt).toISOString(),
+      token: session.session.token,
+      createdAt: new Date(session.session.createdAt).toISOString(),
+      updatedAt: new Date(session.session.updatedAt).toISOString(),
+      ipAddress: session.session.ipAddress ?? null,
+      userAgent: session.session.userAgent ?? null,
+      userId: session.session.userId,
+    },
+  });
+
+  return c.json(payload, 200);
 });
 
 app.doc("/openapi.json", {
