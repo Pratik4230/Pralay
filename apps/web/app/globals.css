@@ -1,1 +1,6 @@
 @import "@repo/ui/globals.css";
+
+@source "../features/**/*.{ts,tsx}";
+@source "../global/**/*.{ts,tsx}";
+@source "./**/*.{ts,tsx}";
+@source "../../../packages/ui/src/**/*.{ts,tsx}";

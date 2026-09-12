@@ -1,19 +1,13 @@
 import type { Metadata } from "next";
-import localFont from "next/font/local";
-import "./globals.css";
-import { Geist } from "next/font/google";
+import { Inter } from "next/font/google";
+
 import { cn } from "@repo/ui/lib/utils";
 
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
+import { Providers } from "@/global/components/providers";
 
-const geistSans = localFont({
-  src: "./fonts/GeistVF.woff",
-  variable: "--font-geist-sans",
-});
-const geistMono = localFont({
-  src: "./fonts/GeistMonoVF.woff",
-  variable: "--font-geist-mono",
-});
+import "./globals.css";
+
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
   title: "Pralay",
@@ -26,15 +20,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={cn("font-sans", geist.variable)}>
+    <html lang="en" className={cn("font-sans", inter.variable)}>
       <body
         className={cn(
           "min-h-screen bg-background font-sans text-foreground antialiased",
-          geistSans.variable,
-          geistMono.variable,
         )}
       >
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );
