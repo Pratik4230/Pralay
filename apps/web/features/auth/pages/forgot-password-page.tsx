@@ -6,7 +6,7 @@ export function ForgotPasswordPage() {
     <>
       <AuthPageHeader
         title="Reset password"
-        description="Enter your email and we will send you a reset link."
+        description="Enter your email and we will send you a reset code."
       />
       <ForgotPasswordForm />
     </>

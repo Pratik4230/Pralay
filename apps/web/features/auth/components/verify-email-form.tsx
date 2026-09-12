@@ -17,47 +17,43 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@repo/ui/components/field";
-import { Input } from "@repo/ui/components/input";
 
 import { AuthOtpInput } from "@/features/auth/components/auth-otp-input";
-import {
-  resetPasswordSchema,
-  type ResetPasswordInput,
-} from "@/features/auth/validations/reset-password.schema";
 import { authClient } from "@/features/auth/utils/auth-client";
 import { parseFieldErrors } from "@/features/auth/utils/parse-field-errors";
+import {
+  verifyEmailSchema,
+  type VerifyEmailInput,
+} from "@/features/auth/validations/verify-email.schema";
 
-type ResetPasswordFormProps = {
+type VerifyEmailFormProps = {
   email?: string;
 };
 
-export function ResetPasswordForm({ email }: ResetPasswordFormProps) {
+export function VerifyEmailForm({ email }: VerifyEmailFormProps) {
   const router = useRouter();
   const [otp, setOtp] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
   const [fieldErrors, setFieldErrors] = useState<
-    Partial<Record<keyof ResetPasswordInput, string>>
+    Partial<Record<keyof VerifyEmailInput, string>>
   >({});
 
-  const resetMutation = useMutation({
-    mutationFn: async (values: ResetPasswordInput) => {
+  const verifyMutation = useMutation({
+    mutationFn: async (values: VerifyEmailInput) => {
       if (!email) {
-        throw new Error("Email is required to reset your password");
+        throw new Error("Email is required to verify your account");
       }
 
-      const { error } = await authClient.emailOtp.resetPassword({
+      const { error } = await authClient.emailOtp.verifyEmail({
         email,
         otp: values.otp,
-        password: values.password,
       });
 
       if (error) {
-        throw new Error(error.message ?? "Unable to reset password");
+        throw new Error(error.message ?? "Unable to verify email");
       }
     },
     onSuccess: () => {
-      router.push("/login");
+      router.push("/dashboard");
       router.refresh();
     },
   });
@@ -68,8 +64,9 @@ export function ResetPasswordForm({ email }: ResetPasswordFormProps) {
         throw new Error("Email is required to resend the code");
       }
 
-      const { error } = await authClient.emailOtp.requestPasswordReset({
+      const { error } = await authClient.emailOtp.sendVerificationOtp({
         email,
+        type: "email-verification",
       });
 
       if (error) {
@@ -82,31 +79,26 @@ export function ResetPasswordForm({ email }: ResetPasswordFormProps) {
     event.preventDefault();
     setFieldErrors({});
 
-    const parsed = resetPasswordSchema.safeParse({
-      otp,
-      password,
-      confirmPassword,
-    });
+    const parsed = verifyEmailSchema.safeParse({ otp });
     if (!parsed.success) {
-      setFieldErrors(
-        parseFieldErrors(parsed.error, ["otp", "password", "confirmPassword"]),
-      );
+      setFieldErrors(parseFieldErrors(parsed.error, ["otp"]));
       return;
     }
 
-    resetMutation.mutate(parsed.data);
+    verifyMutation.mutate(parsed.data);
   }
 
   if (!email) {
     return (
       <Card className="border-border/60 shadow-sm">
         <CardContent className="space-y-3 pt-6 text-sm text-muted-foreground">
-          <p>Start from the forgot password page to request a reset code.</p>
+          <p>We could not find your email address.</p>
+          <p>Sign up again or sign in to request a new code.</p>
         </CardContent>
-        <CardFooter className="border-t-0 bg-transparent pt-6">
+        <CardFooter className="flex-col gap-3 border-t-0 bg-transparent pt-6">
           <Button asChild className="w-full">
-            <Link href="/forgot-password" scroll={false}>
-              Request reset code
+            <Link href="/signup" scroll={false}>
+              Back to sign up
             </Link>
           </Button>
         </CardFooter>
@@ -120,7 +112,7 @@ export function ResetPasswordForm({ email }: ResetPasswordFormProps) {
         <CardContent className="pt-6">
           <FieldGroup>
             <Field data-invalid={!!fieldErrors.otp}>
-              <FieldLabel htmlFor="otp">Reset code</FieldLabel>
+              <FieldLabel htmlFor="otp">Verification code</FieldLabel>
               <AuthOtpInput
                 id="otp"
                 value={otp}
@@ -132,40 +124,8 @@ export function ResetPasswordForm({ email }: ResetPasswordFormProps) {
               ) : null}
             </Field>
 
-            <Field data-invalid={!!fieldErrors.password}>
-              <FieldLabel htmlFor="password">New password</FieldLabel>
-              <Input
-                id="password"
-                type="password"
-                autoComplete="new-password"
-                placeholder="Enter your password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                aria-invalid={!!fieldErrors.password}
-              />
-              {fieldErrors.password ? (
-                <FieldError>{fieldErrors.password}</FieldError>
-              ) : null}
-            </Field>
-
-            <Field data-invalid={!!fieldErrors.confirmPassword}>
-              <FieldLabel htmlFor="confirmPassword">Confirm password</FieldLabel>
-              <Input
-                id="confirmPassword"
-                type="password"
-                autoComplete="new-password"
-                placeholder="Enter your password"
-                value={confirmPassword}
-                onChange={(event) => setConfirmPassword(event.target.value)}
-                aria-invalid={!!fieldErrors.confirmPassword}
-              />
-              {fieldErrors.confirmPassword ? (
-                <FieldError>{fieldErrors.confirmPassword}</FieldError>
-              ) : null}
-            </Field>
-
-            {resetMutation.error ? (
-              <FieldError>{resetMutation.error.message}</FieldError>
+            {verifyMutation.error ? (
+              <FieldError>{verifyMutation.error.message}</FieldError>
             ) : null}
             {resendMutation.error ? (
               <FieldError>{resendMutation.error.message}</FieldError>
@@ -181,9 +141,9 @@ export function ResetPasswordForm({ email }: ResetPasswordFormProps) {
           <Button
             type="submit"
             className="w-full"
-            disabled={resetMutation.isPending}
+            disabled={verifyMutation.isPending}
           >
-            {resetMutation.isPending ? "Updating password..." : "Reset password"}
+            {verifyMutation.isPending ? "Verifying..." : "Verify email"}
           </Button>
           <Button
             type="button"

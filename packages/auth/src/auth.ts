@@ -3,10 +3,21 @@ import { db } from "@repo/db";
 import * as schema from "@repo/db/schema";
 import { consoleEmailSender } from "@repo/email";
 import { betterAuth } from "better-auth";
-import { bearer } from "better-auth/plugins";
+import { bearer, emailOTP } from "better-auth/plugins";
 
 import { authEnv, getSocialProviders } from "./env.js";
 import { provisionNewUser } from "./provision-user.js";
+
+const otpSubjects: Record<string, string> = {
+  "sign-in": "Your Pralay sign-in code",
+  "email-verification": "Verify your Pralay email",
+  "forget-password": "Reset your Pralay password",
+  "change-email": "Confirm your new Pralay email",
+};
+
+function getOtpSubject(type: string) {
+  return otpSubjects[type] ?? "Your Pralay verification code";
+}
 
 export const auth = betterAuth({
   appName: "Pralay",
@@ -25,27 +36,25 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: true,
-    sendResetPassword: async ({ user, url }) => {
-      void consoleEmailSender({
-        to: user.email,
-        subject: "Reset your Pralay password",
-        text: `Click the link to reset your password: ${url}`,
-      });
-    },
   },
   emailVerification: {
     sendOnSignUp: true,
     autoSignInAfterVerification: true,
-    sendVerificationEmail: async ({ user, url }) => {
-      void consoleEmailSender({
-        to: user.email,
-        subject: "Verify your Pralay email",
-        text: `Click the link to verify your email: ${url}`,
-      });
-    },
   },
   socialProviders: getSocialProviders(),
-  plugins: [bearer()],
+  plugins: [
+    bearer(),
+    emailOTP({
+      overrideDefaultEmailVerification: true,
+      async sendVerificationOTP({ email, otp, type }) {
+        void consoleEmailSender({
+          to: email,
+          subject: getOtpSubject(type),
+          text: `Your verification code is: ${otp}\n\nThis code expires in 5 minutes.`,
+        });
+      },
+    }),
+  ],
   databaseHooks: {
     user: {
       create: {

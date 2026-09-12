@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 
@@ -24,28 +25,30 @@ import {
 } from "@/features/auth/validations/forgot-password.schema";
 import { authClient } from "@/features/auth/utils/auth-client";
 import { parseFieldErrors } from "@/features/auth/utils/parse-field-errors";
-import { env } from "@/global/utils/env";
 
 export function ForgotPasswordForm() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
-  const [submitted, setSubmitted] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<
     Partial<Record<keyof ForgotPasswordInput, string>>
   >({});
 
   const forgotMutation = useMutation({
     mutationFn: async (values: ForgotPasswordInput) => {
-      const { error } = await authClient.requestPasswordReset({
+      const { error } = await authClient.emailOtp.requestPasswordReset({
         email: values.email,
-        redirectTo: `${env.appUrl}/reset-password`,
       });
 
       if (error) {
-        throw new Error(error.message ?? "Unable to send reset email");
+        throw new Error(error.message ?? "Unable to send reset code");
       }
+
+      return values.email;
     },
-    onSuccess: () => {
-      setSubmitted(true);
+    onSuccess: (submittedEmail) => {
+      router.push(
+        `/reset-password?email=${encodeURIComponent(submittedEmail)}`,
+      );
     },
   });
 
@@ -60,28 +63,6 @@ export function ForgotPasswordForm() {
     }
 
     forgotMutation.mutate(parsed.data);
-  }
-
-  if (submitted) {
-    return (
-      <Card className="border-border/60 shadow-sm">
-        <CardContent className="space-y-3 pt-6 text-sm text-muted-foreground">
-          <p>
-            If an account exists for that email, we sent a password reset link.
-          </p>
-          <p>
-            In local development, check the API terminal for the reset link.
-          </p>
-        </CardContent>
-        <CardFooter className="border-t-0 bg-transparent pt-6">
-          <Button asChild className="w-full" variant="outline">
-            <Link href="/login" scroll={false}>
-              Back to sign in
-            </Link>
-          </Button>
-        </CardFooter>
-      </Card>
-    );
   }
 
   return (
@@ -116,7 +97,7 @@ export function ForgotPasswordForm() {
             className="w-full"
             disabled={forgotMutation.isPending}
           >
-            {forgotMutation.isPending ? "Sending link..." : "Send reset link"}
+            {forgotMutation.isPending ? "Sending code..." : "Send reset code"}
           </Button>
           <p className="text-center text-sm text-muted-foreground">
             Remember your password?{" "}
