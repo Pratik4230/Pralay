@@ -1,0 +1,100 @@
+import { z } from "zod";
+
+export const workspaceRoleSchema = z.enum(["owner", "admin", "member"]);
+
+export const workspaceSchema = z.object({
+  id: z.uuid(),
+  name: z.string(),
+  slug: z.string(),
+  description: z.string().nullable(),
+  avatarKey: z.string().nullable(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+
+export const workspaceMembershipSchema = z.object({
+  role: workspaceRoleSchema,
+  joinedAt: z.iso.datetime(),
+});
+
+export const workspaceWithMembershipSchema = workspaceSchema.extend({
+  role: workspaceRoleSchema,
+  joinedAt: z.iso.datetime(),
+});
+
+export const workspaceListResponseSchema = z.object({
+  workspaces: z.array(workspaceWithMembershipSchema),
+});
+
+export const workspaceResponseSchema = z.object({
+  workspace: workspaceSchema,
+  membership: workspaceMembershipSchema,
+});
+
+export const workspaceSlugSchema = z
+  .string()
+  .trim()
+  .min(1, "Slug is required")
+  .max(48, "Slug must be at most 48 characters")
+  .regex(
+    /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+    "Use lowercase letters, numbers, and hyphens",
+  );
+
+export const createWorkspaceBodySchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, "Name is required")
+    .max(80, "Name must be at most 80 characters"),
+  description: z
+    .string()
+    .trim()
+    .max(500, "Description must be at most 500 characters")
+    .optional(),
+  slug: workspaceSlugSchema.optional(),
+});
+
+export const updateWorkspaceBodySchema = z
+  .object({
+    name: z
+      .string()
+      .trim()
+      .min(1, "Name is required")
+      .max(80, "Name must be at most 80 characters")
+      .optional(),
+    description: z
+      .string()
+      .trim()
+      .max(500, "Description must be at most 500 characters")
+      .nullable()
+      .optional(),
+    slug: workspaceSlugSchema.optional(),
+    avatarKey: z
+      .string()
+      .trim()
+      .min(1, "Avatar key is required")
+      .max(512, "Avatar key must be at most 512 characters")
+      .nullable()
+      .optional(),
+  })
+  .refine(
+    (value) =>
+      value.name !== undefined ||
+      value.description !== undefined ||
+      value.slug !== undefined ||
+      value.avatarKey !== undefined,
+    { message: "At least one field is required" },
+  );
+
+export const deleteWorkspaceResponseSchema = z.object({
+  success: z.literal(true),
+});
+
+export type CreateWorkspaceBody = z.infer<typeof createWorkspaceBodySchema>;
+export type UpdateWorkspaceBody = z.infer<typeof updateWorkspaceBodySchema>;
+export type WorkspaceRole = z.infer<typeof workspaceRoleSchema>;
+export type Workspace = z.infer<typeof workspaceSchema>;
+export type WorkspaceWithMembership = z.infer<typeof workspaceWithMembershipSchema>;
+export type WorkspaceListResponse = z.infer<typeof workspaceListResponseSchema>;
+export type WorkspaceResponse = z.infer<typeof workspaceResponseSchema>;

@@ -1,9 +1,6 @@
 import { createRoute } from "@hono/zod-openapi";
 
-import {
-  apiErrorSchema,
-  meResponseSchema,
-} from "@repo/validators";
+import { apiErrorSchema, meResponseSchema } from "@repo/validators";
 
 export const meRoute = createRoute({
   method: "get",

@@ -5,7 +5,10 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./*": "./src/*.ts"
+    "./auth": "./src/auth/index.ts",
+    "./common": "./src/common/index.ts",
+    "./system": "./src/system/index.ts",
+    "./workspace": "./src/workspace/index.ts"
   },
   "scripts": {
     "check-types": "tsc --noEmit"

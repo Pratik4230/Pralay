@@ -13,6 +13,7 @@
     "@hono/zod-openapi": "^1.6.3",
     "@repo/auth": "workspace:*",
     "@repo/db": "workspace:*",
+    "@repo/email": "workspace:*",
     "@repo/validators": "workspace:*",
     "hono": "^4.13.7"
   },
