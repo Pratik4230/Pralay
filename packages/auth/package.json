@@ -10,6 +10,7 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
+    "@repo/env": "workspace:*",
     "@better-auth/drizzle-adapter": "^1.4.7",
     "@repo/db": "workspace:*",
     "@repo/email": "workspace:*",

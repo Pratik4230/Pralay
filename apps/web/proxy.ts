@@ -29,6 +29,15 @@ export function proxy(request: NextRequest) {
   }
 
   if (isAuthRoute(pathname) && sessionCookie) {
+    const nextPath = request.nextUrl.searchParams.get("next");
+    if (
+      nextPath &&
+      nextPath.startsWith("/") &&
+      !nextPath.startsWith("//")
+    ) {
+      return NextResponse.redirect(new URL(nextPath, request.url));
+    }
+
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 

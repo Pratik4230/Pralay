@@ -1,3 +1,5 @@
+import { isProduction, nodeEnv } from "@repo/env";
+
 function required(name: string, fallback?: string): string {
   const value = process.env[name] ?? fallback;
   if (!value) {
@@ -11,24 +13,18 @@ function optional(name: string): string | undefined {
   return value && value.length > 0 ? value : undefined;
 }
 
-const nodeEnv = process.env.NODE_ENV ?? "development";
+const defaultAppOrigin = "http://localhost:3000";
+const appOrigin = process.env.CORS_ORIGIN ?? defaultAppOrigin;
 
 export const authEnv = {
   nodeEnv,
-  isProduction: nodeEnv === "production",
+  isProduction,
   secret: required(
     "BETTER_AUTH_SECRET",
     nodeEnv === "production" ? undefined : "dev-better-auth-secret-change-me",
   ),
   baseURL: process.env.BETTER_AUTH_URL ?? "http://localhost:3001",
-  trustedOrigins: (
-    process.env.BETTER_AUTH_TRUSTED_ORIGINS ??
-    process.env.CORS_ORIGIN ??
-    "http://localhost:3000"
-  )
-    .split(",")
-    .map((origin: string) => origin.trim())
-    .filter(Boolean),
+  trustedOrigins: [appOrigin] as string[],
   google: {
     clientId: optional("GOOGLE_CLIENT_ID"),
     clientSecret: optional("GOOGLE_CLIENT_SECRET"),

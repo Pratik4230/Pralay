@@ -16,6 +16,7 @@ import {
   FieldError,
   FieldGroup,
   FieldLabel,
+  Form,
 } from "@repo/ui/components/field";
 import { Input } from "@repo/ui/components/input";
 
@@ -103,7 +104,7 @@ export function ResetPasswordForm({ email }: ResetPasswordFormProps) {
         <CardContent className="space-y-3 pt-6 text-sm text-muted-foreground">
           <p>Start from the forgot password page to request a reset code.</p>
         </CardContent>
-        <CardFooter className="border-t-0 bg-transparent pt-6">
+        <CardFooter className="border-t-0 bg-transparent">
           <Button asChild className="w-full">
             <Link href="/forgot-password" scroll={false}>
               Request reset code
@@ -116,7 +117,7 @@ export function ResetPasswordForm({ email }: ResetPasswordFormProps) {
 
   return (
     <Card className="border-border/60 shadow-sm">
-      <form onSubmit={handleSubmit}>
+      <Form onSubmit={handleSubmit}>
         <CardContent className="pt-6">
           <FieldGroup>
             <Field data-invalid={!!fieldErrors.otp}>
@@ -177,7 +178,7 @@ export function ResetPasswordForm({ email }: ResetPasswordFormProps) {
             ) : null}
           </FieldGroup>
         </CardContent>
-        <CardFooter className="flex-col gap-4 border-t-0 bg-transparent pt-6">
+        <CardFooter className="flex-col gap-4">
           <Button
             type="submit"
             className="w-full"
@@ -198,7 +199,7 @@ export function ResetPasswordForm({ email }: ResetPasswordFormProps) {
             Didn&apos;t receive it? Check your spam folder or resend the code.
           </p>
         </CardFooter>
-      </form>
+      </Form>
     </Card>
   );
 }

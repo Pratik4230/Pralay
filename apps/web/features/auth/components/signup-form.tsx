@@ -16,6 +16,7 @@ import {
   FieldError,
   FieldGroup,
   FieldLabel,
+  Form,
 } from "@repo/ui/components/field";
 import { Input } from "@repo/ui/components/input";
 
@@ -72,7 +73,7 @@ export function SignupForm() {
 
   return (
     <Card className="border-border/60 shadow-sm">
-      <form onSubmit={handleSubmit}>
+      <Form onSubmit={handleSubmit}>
         <CardContent className="pt-6">
           <FieldGroup>
             <Field data-invalid={!!fieldErrors.name}>
@@ -127,7 +128,7 @@ export function SignupForm() {
             ) : null}
           </FieldGroup>
         </CardContent>
-        <CardFooter className="flex-col gap-4 border-t-0 bg-transparent pt-6">
+        <CardFooter className="flex-col gap-4">
           <Button
             type="submit"
             className="w-full"
@@ -146,7 +147,7 @@ export function SignupForm() {
             </Link>
           </p>
         </CardFooter>
-      </form>
+      </Form>
     </Card>
   );
 }

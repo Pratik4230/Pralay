@@ -3,9 +3,11 @@ import { z } from "zod";
 
 import {
   apiErrorSchema,
+  createWorkspaceAvatarUploadBodySchema,
   createWorkspaceBodySchema,
   deleteWorkspaceResponseSchema,
   updateWorkspaceBodySchema,
+  workspaceAvatarUploadResponseSchema,
   workspaceListResponseSchema,
   workspaceResponseSchema,
 } from "@repo/validators";
@@ -207,6 +209,57 @@ export const deleteWorkspaceRoute = createRoute({
     },
     404: {
       description: "Workspace not found",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+  },
+});
+
+export const createWorkspaceAvatarUploadRoute = createRoute({
+  method: "post",
+  path: "/api/v1/workspaces/{id}/avatar/upload",
+  tags: ["Workspaces"],
+  summary: "Create workspace avatar upload URL",
+  description:
+    "Returns a presigned S3 URL for uploading a workspace avatar. Requires owner or admin role.",
+  request: {
+    params: z.object({
+      id: z.uuid(),
+    }),
+    body: {
+      content: {
+        "application/json": {
+          schema: createWorkspaceAvatarUploadBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Presigned upload URL",
+      content: {
+        "application/json": {
+          schema: workspaceAvatarUploadResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Not authenticated",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+    403: {
+      description: "Forbidden",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+    404: {
+      description: "Workspace not found",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+    503: {
+      description: "Storage not configured",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+    422: {
+      description: "Validation error",
       content: { "application/json": { schema: apiErrorSchema } },
     },
   },

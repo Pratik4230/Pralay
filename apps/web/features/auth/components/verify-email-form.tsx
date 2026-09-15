@@ -16,6 +16,7 @@ import {
   FieldError,
   FieldGroup,
   FieldLabel,
+  Form,
 } from "@repo/ui/components/field";
 
 import { AuthOtpInput } from "@/features/auth/components/auth-otp-input";
@@ -95,7 +96,7 @@ export function VerifyEmailForm({ email }: VerifyEmailFormProps) {
           <p>We could not find your email address.</p>
           <p>Sign up again or sign in to request a new code.</p>
         </CardContent>
-        <CardFooter className="flex-col gap-3 border-t-0 bg-transparent pt-6">
+        <CardFooter className="flex-col gap-3 border-t-0 bg-transparent">
           <Button asChild className="w-full">
             <Link href="/signup" scroll={false}>
               Back to sign up
@@ -108,7 +109,7 @@ export function VerifyEmailForm({ email }: VerifyEmailFormProps) {
 
   return (
     <Card className="border-border/60 shadow-sm">
-      <form onSubmit={handleSubmit}>
+      <Form onSubmit={handleSubmit}>
         <CardContent className="pt-6">
           <FieldGroup>
             <Field data-invalid={!!fieldErrors.otp}>
@@ -137,7 +138,7 @@ export function VerifyEmailForm({ email }: VerifyEmailFormProps) {
             ) : null}
           </FieldGroup>
         </CardContent>
-        <CardFooter className="flex-col gap-4 border-t-0 bg-transparent pt-6">
+        <CardFooter className="flex-col gap-4">
           <Button
             type="submit"
             className="w-full"
@@ -158,7 +159,7 @@ export function VerifyEmailForm({ email }: VerifyEmailFormProps) {
             Didn&apos;t receive it? Check your spam folder or resend the code.
           </p>
         </CardFooter>
-      </form>
+      </Form>
     </Card>
   );
 }

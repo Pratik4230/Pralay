@@ -1,3 +1,4 @@
+import { SignOutButton } from "@/features/auth/components/sign-out-button";
 import Link from "next/link";
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
@@ -8,10 +9,14 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           <Link href="/dashboard" className="font-semibold tracking-tight">
             Pralay
           </Link>
-          <nav className="flex items-center gap-4 text-sm text-muted-foreground">
-            <Link href="/" className="hover:text-foreground">
-              Home
+          <nav className="flex items-center gap-3 text-sm">
+            <Link
+              href="/dashboard"
+              className="text-muted-foreground hover:text-foreground"
+            >
+              Dashboard
             </Link>
+            <SignOutButton />
           </nav>
         </div>
       </header>

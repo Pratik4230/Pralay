@@ -4,17 +4,18 @@ import { and, eq, gt } from "drizzle-orm";
 
 import { db } from "@repo/db";
 import {
-  user,
   userWorkspacePreferences,
   workspaceInvites,
   workspaceMembers,
+  workspaces,
 } from "@repo/db/schema";
-import { consoleEmailSender } from "@repo/email";
+import { getEmailSender } from "@repo/email";
 import type {
   AcceptWorkspaceInviteBody,
   CreateWorkspaceInviteBody,
 } from "@repo/validators";
 
+import { env } from "../../../config/env.js";
 import { requireWorkspaceAdmin } from "./workspace-access.service.js";
 import {
   isWorkspaceMemberByEmail,
@@ -64,6 +65,32 @@ function mapInvite(row: {
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
+}
+
+function buildWorkspaceInviteEmail(input: {
+  token: string;
+  workspaceName: string;
+}) {
+  const inviteUrl = `${env.webAppUrl.replace(/\/$/, "")}/invite?token=${encodeURIComponent(input.token)}`;
+
+  return {
+    inviteUrl,
+    subject: "You have been invited to a Pralay workspace",
+    text: [
+      `You have been invited to join ${input.workspaceName} on Pralay.`,
+      "",
+      `Accept your invite: ${inviteUrl}`,
+      "",
+      "If you already have an account, sign in with this email address first.",
+      `You can also paste this invite code on your dashboard: ${input.token}`,
+    ].join("\n"),
+    html: [
+      `<p>You have been invited to join <strong>${input.workspaceName}</strong> on Pralay.</p>`,
+      `<p><a href="${inviteUrl}">Accept your invite</a></p>`,
+      "<p>If you already have an account, sign in with this email address first.</p>",
+      `<p>Invite code: <code>${input.token}</code></p>`,
+    ].join(""),
+  };
 }
 
 export async function listWorkspaceInvites(
@@ -143,10 +170,22 @@ export async function createWorkspaceInvite(
     throw new Error("Failed to create workspace invite");
   }
 
-  void consoleEmailSender({
+  const [workspace] = await db
+    .select({ name: workspaces.name })
+    .from(workspaces)
+    .where(eq(workspaces.id, workspaceId))
+    .limit(1);
+
+  const emailContent = buildWorkspaceInviteEmail({
+    token,
+    workspaceName: workspace?.name ?? "a workspace",
+  });
+
+  void getEmailSender()({
     to: email,
-    subject: "You have been invited to a Pralay workspace",
-    text: `You have been invited to join a workspace on Pralay.\n\nSign in with this email address and use invite code ${token} to join.`,
+    subject: emailContent.subject,
+    text: emailContent.text,
+    html: emailContent.html,
   });
 
   return mapInvite(invite);

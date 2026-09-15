@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 
@@ -16,6 +16,7 @@ import {
   FieldError,
   FieldGroup,
   FieldLabel,
+  Form,
 } from "@repo/ui/components/field";
 import { Input } from "@repo/ui/components/input";
 
@@ -26,8 +27,18 @@ import {
 import { authClient } from "@/features/auth/utils/auth-client";
 import { parseFieldErrors } from "@/features/auth/utils/parse-field-errors";
 
+function getSafeRedirectPath(next: string | null) {
+  if (!next || !next.startsWith("/") || next.startsWith("//")) {
+    return "/dashboard";
+  }
+
+  return next;
+}
+
 export function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectPath = getSafeRedirectPath(searchParams.get("next"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fieldErrors, setFieldErrors] = useState<
@@ -39,7 +50,7 @@ export function LoginForm() {
       const { data, error } = await authClient.signIn.email({
         email: values.email,
         password: values.password,
-        callbackURL: "/dashboard",
+        callbackURL: redirectPath,
       });
 
       if (error) {
@@ -49,7 +60,7 @@ export function LoginForm() {
       return data;
     },
     onSuccess: () => {
-      router.push("/dashboard");
+      router.push(redirectPath);
       router.refresh();
     },
   });
@@ -69,7 +80,7 @@ export function LoginForm() {
 
   return (
     <Card className="border-border/60 shadow-sm">
-      <form onSubmit={handleSubmit}>
+      <Form onSubmit={handleSubmit}>
         <CardContent className="pt-6">
           <FieldGroup>
             <Field data-invalid={!!fieldErrors.email}>
@@ -118,7 +129,7 @@ export function LoginForm() {
             ) : null}
           </FieldGroup>
         </CardContent>
-        <CardFooter className="flex-col gap-4 border-t-0 bg-transparent pt-6">
+        <CardFooter className="flex-col gap-4">
           <Button
             type="submit"
             className="w-full"
@@ -137,7 +148,7 @@ export function LoginForm() {
             </Link>
           </p>
         </CardFooter>
-      </form>
+      </Form>
     </Card>
   );
 }

@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+
 import { AuthFormDivider } from "@/features/auth/components/auth-form-divider";
 import { AuthPageHeader } from "@/features/auth/components/auth-page-header";
 import { LoginForm } from "@/features/auth/components/login-form";
@@ -15,7 +17,9 @@ export function LoginPage() {
       />
       <OAuthButtons providers={oauthProviders} />
       {oauthProviders.length > 0 ? <AuthFormDivider /> : null}
-      <LoginForm />
+      <Suspense fallback={null}>
+        <LoginForm />
+      </Suspense>
     </>
   );
 }

@@ -1,8 +1,9 @@
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { db } from "@repo/db";
 import * as schema from "@repo/db/schema";
-import { consoleEmailSender } from "@repo/email";
+import { getEmailSender } from "@repo/email";
 import { betterAuth } from "better-auth";
+import type { BetterAuthOptions } from "better-auth";
 import { bearer, emailOTP } from "better-auth/plugins";
 
 import { authEnv, getSocialProviders } from "./env.js";
@@ -41,13 +42,13 @@ export const auth = betterAuth({
     sendOnSignUp: true,
     autoSignInAfterVerification: true,
   },
-  socialProviders: getSocialProviders(),
+  socialProviders: getSocialProviders() as BetterAuthOptions["socialProviders"],
   plugins: [
     bearer(),
     emailOTP({
       overrideDefaultEmailVerification: true,
       async sendVerificationOTP({ email, otp, type }) {
-        void consoleEmailSender({
+        void getEmailSender()({
           to: email,
           subject: getOtpSubject(type),
           text: `Your verification code is: ${otp}\n\nThis code expires in 5 minutes.`,

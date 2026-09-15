@@ -91,10 +91,28 @@ export const deleteWorkspaceResponseSchema = z.object({
   success: z.literal(true),
 });
 
+export const workspaceAvatarContentTypeSchema = z.enum([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
+
+export const createWorkspaceAvatarUploadBodySchema = z.object({
+  contentType: workspaceAvatarContentTypeSchema,
+});
+
+export const workspaceAvatarUploadResponseSchema = z.object({
+  avatarKey: z.string(),
+  uploadUrl: z.url(),
+  expiresIn: z.number().int().positive(),
+});
+
 export type CreateWorkspaceBody = z.infer<typeof createWorkspaceBodySchema>;
 export type UpdateWorkspaceBody = z.infer<typeof updateWorkspaceBodySchema>;
 export type WorkspaceRole = z.infer<typeof workspaceRoleSchema>;
 export type Workspace = z.infer<typeof workspaceSchema>;
-export type WorkspaceWithMembership = z.infer<typeof workspaceWithMembershipSchema>;
+export type WorkspaceWithMembership = z.infer<
+  typeof workspaceWithMembershipSchema
+>;
 export type WorkspaceListResponse = z.infer<typeof workspaceListResponseSchema>;
 export type WorkspaceResponse = z.infer<typeof workspaceResponseSchema>;
