@@ -134,6 +134,7 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
           <WorkspaceSettingsPanel
             workspaceId={workspaceId}
             name={workspace.name}
+            slug={workspace.slug}
             description={workspace.description}
             avatarKey={workspace.avatarKey}
             role={membership.role}

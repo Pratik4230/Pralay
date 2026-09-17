@@ -177,6 +177,10 @@ export const updateWorkspaceRoute = createRoute({
       description: "Forbidden",
       content: { "application/json": { schema: apiErrorSchema } },
     },
+    400: {
+      description: "Invalid avatar key",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
     404: {
       description: "Workspace not found",
       content: { "application/json": { schema: apiErrorSchema } },

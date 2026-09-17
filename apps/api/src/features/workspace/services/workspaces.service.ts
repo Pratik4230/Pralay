@@ -10,6 +10,7 @@ import {
   createUniqueWorkspaceSlug,
   isWorkspaceSlugTaken,
 } from "@repo/db/utils/workspace-slug";
+import { parseWorkspaceIdFromAvatarKey } from "@repo/storage";
 import type { CreateWorkspaceBody, ListWorkspacesQuery, UpdateWorkspaceBody } from "@repo/validators";
 
 import {
@@ -39,6 +40,13 @@ export class WorkspaceSlugTakenError extends Error {
   constructor() {
     super("Workspace slug is already taken");
     this.name = "WorkspaceSlugTakenError";
+  }
+}
+
+export class InvalidWorkspaceMediaKeyError extends Error {
+  constructor() {
+    super("Media key is not valid for this workspace");
+    this.name = "InvalidWorkspaceMediaKeyError";
   }
 }
 
@@ -210,6 +218,13 @@ export async function updateWorkspaceForUser(
 
     if (current?.slug !== input.slug) {
       throw new WorkspaceSlugTakenError();
+    }
+  }
+
+  if (input.avatarKey !== undefined && input.avatarKey !== null) {
+    const keyWorkspaceId = parseWorkspaceIdFromAvatarKey(input.avatarKey);
+    if (keyWorkspaceId !== workspaceId) {
+      throw new InvalidWorkspaceMediaKeyError();
     }
   }
 

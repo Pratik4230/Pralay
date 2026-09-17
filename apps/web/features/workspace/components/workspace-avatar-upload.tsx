@@ -12,7 +12,10 @@ import {
 import { Input } from "@repo/ui/components/input";
 
 import { WorkspaceAvatar } from "@/features/workspace/components/workspace-avatar";
-import { useUploadWorkspaceAvatar } from "@/features/workspace/hooks/use-workspace-avatar";
+import {
+  useRemoveWorkspaceAvatar,
+  useUploadWorkspaceAvatar,
+} from "@/features/workspace/hooks/use-workspace-avatar";
 import {
   defaultAvatarFileName,
   validateWorkspaceAvatarFile,
@@ -37,6 +40,7 @@ export function WorkspaceAvatarUpload({
   const [localPreview, setLocalPreview] = useState<string | null>(null);
   const [fieldError, setFieldError] = useState<string | null>(null);
   const uploadAvatar = useUploadWorkspaceAvatar(workspaceId);
+  const removeAvatar = useRemoveWorkspaceAvatar(workspaceId);
 
   function clearSelection() {
     setSelectedFile(null);
@@ -103,7 +107,9 @@ export function WorkspaceAvatarUpload({
 
   const previewKey = uploadAvatar.isSuccess
     ? uploadAvatar.data.workspace.avatarKey
-    : avatarKey;
+    : removeAvatar.isSuccess
+      ? null
+      : avatarKey;
 
   return (
     <Field>
@@ -115,7 +121,7 @@ export function WorkspaceAvatarUpload({
           previewUrl={localPreview}
           className="size-16 text-base"
         />
-        <div className="flex min-w-[12rem] flex-1 flex-col gap-3">
+        <div className="flex min-w-48 flex-1 flex-col gap-3">
           <input
             ref={inputRef}
             type="file"
@@ -170,6 +176,27 @@ export function WorkspaceAvatarUpload({
           <p className="text-xs text-muted-foreground">
             JPG, PNG, or WebP up to 5 MB.
           </p>
+          {(previewKey || localPreview) && !selectedFile ? (
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-auto justify-start px-0 text-muted-foreground"
+              disabled={uploadAvatar.isPending || removeAvatar.isPending}
+              onClick={() =>
+                removeAvatar.mutate(undefined, {
+                  onError: (error) => {
+                    setFieldError(
+                      error instanceof Error
+                        ? error.message
+                        : "Failed to remove avatar",
+                    );
+                  },
+                })
+              }
+            >
+              {removeAvatar.isPending ? "Removing..." : "Remove avatar"}
+            </Button>
+          ) : null}
         </div>
       </div>
       {fieldError ? <FieldError>{fieldError}</FieldError> : null}

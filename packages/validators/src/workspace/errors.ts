@@ -35,6 +35,11 @@ export const inviteInvalidError = createApiError(
   "Invite is invalid or expired",
 );
 
+export const invalidWorkspaceMediaKeyError = createApiError(
+  "BAD_REQUEST",
+  "Media key is not valid for this workspace",
+);
+
 export const invalidWorkspaceListCursorError = createApiError(
   "BAD_REQUEST",
   "Invalid pagination cursor",

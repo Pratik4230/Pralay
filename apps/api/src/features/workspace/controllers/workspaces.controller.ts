@@ -5,6 +5,7 @@ import {
   deleteWorkspaceResponseSchema,
   forbiddenError,
   invalidWorkspaceListCursorError,
+  invalidWorkspaceMediaKeyError,
   listWorkspacesQuerySchema,
   unauthorizedError,
   updateWorkspaceBodySchema,
@@ -26,6 +27,7 @@ import {
   listWorkspacesForUser,
   mapWorkspaceRow,
   updateWorkspaceForUser,
+  InvalidWorkspaceMediaKeyError,
   WorkspaceListCursorError,
   WorkspaceSlugTakenError,
 } from "../services/workspaces.service.js";
@@ -133,6 +135,9 @@ export async function updateWorkspaceController(
     }
     if (error instanceof WorkspaceSlugTakenError) {
       return c.json(workspaceSlugTakenError, 409);
+    }
+    if (error instanceof InvalidWorkspaceMediaKeyError) {
+      return c.json(invalidWorkspaceMediaKeyError, 400);
     }
     throw error;
   }
