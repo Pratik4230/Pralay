@@ -40,3 +40,8 @@ export function parseWorkspaceIdFromAvatarKey(key: string) {
   const match = /^uploads\/workspaces\/([^/]+)\/avatars\/.+$/.exec(key);
   return match?.[1] ?? null;
 }
+
+/** All user uploads for a workspace (avatars today; assets under same tree later). */
+export function buildWorkspaceUploadsPrefix(workspaceId: string) {
+  return `uploads/workspaces/${workspaceId}/`;
+}

@@ -10,7 +10,7 @@ import {
   createUniqueWorkspaceSlug,
   isWorkspaceSlugTaken,
 } from "@repo/db/utils/workspace-slug";
-import { parseWorkspaceIdFromAvatarKey } from "@repo/storage";
+import { parseWorkspaceIdFromAvatarKey, deleteObject, deleteWorkspaceUploadObjects } from "@repo/storage";
 import type { CreateWorkspaceBody, ListWorkspacesQuery, UpdateWorkspaceBody } from "@repo/validators";
 
 import {
@@ -228,6 +228,16 @@ export async function updateWorkspaceForUser(
     }
   }
 
+  let previousAvatarKey: string | null = null;
+  if (input.avatarKey !== undefined) {
+    const [existing] = await db
+      .select({ avatarKey: workspaces.avatarKey })
+      .from(workspaces)
+      .where(eq(workspaces.id, workspaceId))
+      .limit(1);
+    previousAvatarKey = existing?.avatarKey ?? null;
+  }
+
   await db
     .update(workspaces)
     .set({
@@ -240,6 +250,18 @@ export async function updateWorkspaceForUser(
       updatedAt: sql`now()`,
     })
     .where(eq(workspaces.id, workspaceId));
+
+  if (
+    input.avatarKey !== undefined &&
+    previousAvatarKey &&
+    previousAvatarKey !== input.avatarKey
+  ) {
+    try {
+      await deleteObject(previousAvatarKey);
+    } catch {
+      // Best-effort cleanup; DB is already updated.
+    }
+  }
 
   const workspace = await getWorkspaceForUser(userId, workspaceId);
 
@@ -263,6 +285,12 @@ export async function deleteWorkspaceForUser(
 
   if (deleted.length === 0) {
     throw new WorkspaceAccessError();
+  }
+
+  try {
+    await deleteWorkspaceUploadObjects(workspaceId);
+  } catch {
+    // Best-effort cleanup after workspace row is removed.
   }
 
   return { success: true as const };
