@@ -8,6 +8,7 @@ import {
   deleteWorkspaceResponseSchema,
   updateWorkspaceBodySchema,
   workspaceAvatarUploadResponseSchema,
+  listWorkspacesQuerySchema,
   workspaceListResponseSchema,
   workspaceResponseSchema,
 } from "@repo/validators";
@@ -17,13 +18,25 @@ export const listWorkspacesRoute = createRoute({
   path: "/api/v1/workspaces",
   tags: ["Workspaces"],
   summary: "List workspaces",
-  description: "Returns workspaces the authenticated user belongs to.",
+  description:
+    "Returns a paginated list of workspaces the authenticated user belongs to, sorted by last updated.",
+  request: {
+    query: listWorkspacesQuerySchema,
+  },
   responses: {
     200: {
-      description: "Workspace list",
+      description: "Workspace list page",
       content: {
         "application/json": {
           schema: workspaceListResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: "Invalid cursor",
+      content: {
+        "application/json": {
+          schema: apiErrorSchema,
         },
       },
     },

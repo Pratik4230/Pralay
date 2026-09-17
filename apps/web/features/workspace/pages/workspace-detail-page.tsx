@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 
 import { Button } from "@repo/ui/components/button";
 import { cn } from "@repo/ui/lib/utils";
@@ -20,9 +20,18 @@ type WorkspaceTab = "members" | "invites" | "settings";
 
 export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const avatarUploadFailed = searchParams.get("avatarUpload") === "failed";
+  const avatarUploadMessage = searchParams.get("message");
   const [tab, setTab] = useState<WorkspaceTab>("members");
   const workspaceQuery = useWorkspace(workspaceId);
   const meQuery = useMe();
+
+  useEffect(() => {
+    if (avatarUploadFailed) {
+      setTab("settings");
+    }
+  }, [avatarUploadFailed]);
 
   if (workspaceQuery.isLoading || meQuery.isLoading) {
     return (
@@ -77,6 +86,21 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
           </div>
         </div>
       </div>
+
+      {avatarUploadFailed ? (
+        <div
+          role="alert"
+          className="rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+        >
+          <p className="font-medium">Workspace created, but the image did not upload.</p>
+          {avatarUploadMessage ? (
+            <p className="mt-1 text-destructive/90">{avatarUploadMessage}</p>
+          ) : null}
+          <p className="mt-2 text-destructive/90">
+            Add the avatar below after fixing S3 CORS and permissions.
+          </p>
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap gap-2">
         {tabs.map((item) => (

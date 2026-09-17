@@ -52,7 +52,15 @@ export async function uploadWorkspaceAvatarFile(
   });
 
   if (!uploadResponse.ok) {
-    throw new Error("Failed to upload avatar to storage");
+    const hint =
+      uploadResponse.status === 403
+        ? "Check IAM (s3:PutObject) on your bucket."
+        : uploadResponse.status === 0
+          ? "This is often missing S3 CORS for your web app origin (e.g. http://localhost:3000)."
+          : "";
+    throw new Error(
+      `Failed to upload image to storage (HTTP ${uploadResponse.status}). ${hint}`.trim(),
+    );
   }
 
   return fetchApiClient<WorkspaceResponse>(

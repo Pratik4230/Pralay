@@ -2,6 +2,7 @@ export type {
   AcceptWorkspaceInviteBody,
   CreateWorkspaceBody,
   CreateWorkspaceInviteBody,
+  ListWorkspacesQuery,
   MeResponse,
   UpdateWorkspaceBody,
   UpdateWorkspaceMemberBody,

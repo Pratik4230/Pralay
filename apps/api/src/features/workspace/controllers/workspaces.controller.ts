@@ -4,6 +4,8 @@ import {
   createWorkspaceBodySchema,
   deleteWorkspaceResponseSchema,
   forbiddenError,
+  invalidWorkspaceListCursorError,
+  listWorkspacesQuerySchema,
   unauthorizedError,
   updateWorkspaceBodySchema,
   workspaceListResponseSchema,
@@ -24,6 +26,7 @@ import {
   listWorkspacesForUser,
   mapWorkspaceRow,
   updateWorkspaceForUser,
+  WorkspaceListCursorError,
   WorkspaceSlugTakenError,
 } from "../services/workspaces.service.js";
 
@@ -53,8 +56,20 @@ export async function listWorkspacesController(
   const session = c.get("session");
   if (!session) return c.json(unauthorizedError, 401);
 
-  const workspaces = await listWorkspacesForUser(session.user.id);
-  return c.json(workspaceListResponseSchema.parse({ workspaces }), 200);
+  const query = listWorkspacesQuerySchema.parse({
+    limit: c.req.query("limit"),
+    cursor: c.req.query("cursor"),
+  });
+
+  try {
+    const result = await listWorkspacesForUser(session.user.id, query);
+    return c.json(workspaceListResponseSchema.parse(result), 200);
+  } catch (error) {
+    if (error instanceof WorkspaceListCursorError) {
+      return c.json(invalidWorkspaceListCursorError, 400);
+    }
+    throw error;
+  }
 }
 
 export async function createWorkspaceController(

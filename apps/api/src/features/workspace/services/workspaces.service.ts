@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, lt, or, sql } from "drizzle-orm";
 
 import { db } from "@repo/db";
 import {
@@ -10,8 +10,13 @@ import {
   createUniqueWorkspaceSlug,
   isWorkspaceSlugTaken,
 } from "@repo/db/utils/workspace-slug";
-import type { CreateWorkspaceBody, UpdateWorkspaceBody } from "@repo/validators";
+import type { CreateWorkspaceBody, ListWorkspacesQuery, UpdateWorkspaceBody } from "@repo/validators";
 
+import {
+  decodeWorkspaceListCursor,
+  encodeWorkspaceListCursor,
+  WorkspaceListCursorError,
+} from "./workspace-list-cursor.js";
 import {
   requireWorkspaceAdmin,
   requireWorkspaceOwner,
@@ -63,15 +68,54 @@ const workspaceSelect = {
   joinedAt: workspaceMembers.joinedAt,
 };
 
-export async function listWorkspacesForUser(userId: string) {
+export async function listWorkspacesForUser(
+  userId: string,
+  query: ListWorkspacesQuery = { limit: 20 },
+) {
+  const limit = query.limit;
+  const fetchLimit = limit + 1;
+
+  const conditions = [eq(workspaceMembers.userId, userId)];
+
+  if (query.cursor) {
+    const cursor = decodeWorkspaceListCursor(query.cursor);
+    conditions.push(
+      or(
+        lt(workspaces.updatedAt, cursor.updatedAt),
+        and(
+          eq(workspaces.updatedAt, cursor.updatedAt),
+          lt(workspaces.id, cursor.id),
+        ),
+      )!,
+    );
+  }
+
   const rows = await db
     .select(workspaceSelect)
     .from(workspaceMembers)
     .innerJoin(workspaces, eq(workspaceMembers.workspaceId, workspaces.id))
-    .where(eq(workspaceMembers.userId, userId));
+    .where(and(...conditions))
+    .orderBy(desc(workspaces.updatedAt), desc(workspaces.id))
+    .limit(fetchLimit);
 
-  return rows.map(mapWorkspaceRow);
+  const hasMore = rows.length > limit;
+  const pageRows = hasMore ? rows.slice(0, limit) : rows;
+  const lastRow = pageRows.at(-1);
+
+  return {
+    workspaces: pageRows.map(mapWorkspaceRow),
+    nextCursor:
+      hasMore && lastRow
+        ? encodeWorkspaceListCursor({
+            updatedAt: lastRow.updatedAt,
+            id: lastRow.id,
+          })
+        : null,
+    hasMore,
+  };
 }
+
+export { WorkspaceListCursorError };
 
 export async function getWorkspaceForUser(userId: string, workspaceId: string) {
   const [row] = await db

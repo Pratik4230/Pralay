@@ -156,9 +156,17 @@ export function CreateWorkspaceDialog({
         avatarFileName: avatarFile ? avatarImageName.trim() : undefined,
       },
       {
-        onSuccess: ({ data }) => {
+        onSuccess: (result) => {
           handleOpenChange(false);
-          router.push(`/dashboard/workspaces/${data.workspace.id}`);
+          const base = `/dashboard/workspaces/${result.data.workspace.id}`;
+          if (result.avatarUploadFailed) {
+            const message = result.avatarUploadError ?? "Avatar upload failed";
+            router.push(
+              `${base}?avatarUpload=failed&message=${encodeURIComponent(message)}`,
+            );
+            return;
+          }
+          router.push(base);
         },
         onError: (error) => {
           if (error instanceof ApiRequestError && error.status === 409) {

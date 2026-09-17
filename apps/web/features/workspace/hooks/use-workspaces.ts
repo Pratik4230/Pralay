@@ -1,18 +1,25 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
 
 import type {
   CreateWorkspaceBody,
   UpdateWorkspaceBody,
-  WorkspaceListResponse,
   WorkspaceResponse,
 } from "@/features/workspace/types";
+import {
+  fetchWorkspaceListPage,
+  WORKSPACE_LIST_PAGE_SIZE,
+} from "@/features/workspace/utils/fetch-workspace-list";
 import { workspaceKeys } from "@/features/workspace/utils/query-keys";
 import { uploadWorkspaceAvatarFile } from "@/features/workspace/utils/upload-workspace-avatar";
-import {
-  fetchApiClient,
-} from "@/global/utils/api-client";
+import { fetchApiClient } from "@/global/utils/api-client";
 
 export type CreateWorkspaceInput = CreateWorkspaceBody & {
   avatarFile?: File | null;
@@ -22,12 +29,26 @@ export type CreateWorkspaceInput = CreateWorkspaceBody & {
 export type CreateWorkspaceResult = {
   data: WorkspaceResponse;
   avatarUploadFailed: boolean;
+  avatarUploadError?: string;
 };
 
-export function useWorkspaces() {
-  return useQuery({
-    queryKey: workspaceKeys.all,
-    queryFn: () => fetchApiClient<WorkspaceListResponse>("/api/v1/workspaces"),
+function invalidateWorkspaceLists(queryClient: QueryClient) {
+  void queryClient.invalidateQueries({ queryKey: workspaceKeys.all });
+}
+
+export function useInfiniteWorkspaces(
+  limit: number = WORKSPACE_LIST_PAGE_SIZE,
+) {
+  return useInfiniteQuery({
+    queryKey: workspaceKeys.infiniteList(limit),
+    queryFn: ({ pageParam }) =>
+      fetchWorkspaceListPage({
+        limit,
+        cursor: pageParam,
+      }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) =>
+      lastPage.hasMore ? lastPage.nextCursor : undefined,
   });
 }
 
@@ -70,12 +91,17 @@ export function useCreateWorkspace() {
           avatarFileName,
         );
         return { data: updated, avatarUploadFailed: false };
-      } catch {
-        return { data: created, avatarUploadFailed: true };
+      } catch (error) {
+        return {
+          data: created,
+          avatarUploadFailed: true,
+          avatarUploadError:
+            error instanceof Error ? error.message : "Avatar upload failed",
+        };
       }
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: workspaceKeys.all });
+      invalidateWorkspaceLists(queryClient);
     },
   });
 }
@@ -90,7 +116,7 @@ export function useUpdateWorkspace(workspaceId: string) {
         body: JSON.stringify(body),
       }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: workspaceKeys.all });
+      invalidateWorkspaceLists(queryClient);
       void queryClient.invalidateQueries({
         queryKey: workspaceKeys.detail(workspaceId),
       });
@@ -107,7 +133,7 @@ export function useDeleteWorkspace() {
         method: "DELETE",
       }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: workspaceKeys.all });
+      invalidateWorkspaceLists(queryClient);
     },
   });
 }
@@ -125,7 +151,7 @@ export function useAcceptWorkspaceInvite() {
         },
       ),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: workspaceKeys.all });
+      invalidateWorkspaceLists(queryClient);
     },
   });
 }

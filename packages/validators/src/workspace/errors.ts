@@ -34,3 +34,8 @@ export const inviteInvalidError = createApiError(
   "BAD_REQUEST",
   "Invite is invalid or expired",
 );
+
+export const invalidWorkspaceListCursorError = createApiError(
+  "BAD_REQUEST",
+  "Invalid pagination cursor",
+);

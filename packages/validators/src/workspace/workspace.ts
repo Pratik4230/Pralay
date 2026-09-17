@@ -24,6 +24,18 @@ export const workspaceWithMembershipSchema = workspaceSchema.extend({
 
 export const workspaceListResponseSchema = z.object({
   workspaces: z.array(workspaceWithMembershipSchema),
+  nextCursor: z.string().nullable(),
+  hasMore: z.boolean(),
+});
+
+export const listWorkspacesQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  cursor: z.string().trim().min(1).optional(),
+});
+
+export const workspaceListCursorPayloadSchema = z.object({
+  updatedAt: z.iso.datetime(),
+  id: z.uuid(),
 });
 
 export const workspaceResponseSchema = z.object({
@@ -122,4 +134,5 @@ export type WorkspaceWithMembership = z.infer<
   typeof workspaceWithMembershipSchema
 >;
 export type WorkspaceListResponse = z.infer<typeof workspaceListResponseSchema>;
+export type ListWorkspacesQuery = z.infer<typeof listWorkspacesQuerySchema>;
 export type WorkspaceResponse = z.infer<typeof workspaceResponseSchema>;

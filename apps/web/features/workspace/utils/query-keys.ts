@@ -1,5 +1,7 @@
 export const workspaceKeys = {
   all: ["workspaces"] as const,
+  infiniteList: (limit: number) =>
+    ["workspaces", "infinite", limit] as const,
   detail: (id: string) => ["workspaces", id] as const,
   members: (workspaceId: string) =>
     ["workspaces", workspaceId, "members"] as const,
