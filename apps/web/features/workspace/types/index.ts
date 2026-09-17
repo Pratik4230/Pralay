@@ -6,6 +6,8 @@ export type {
   MeResponse,
   UpdateWorkspaceBody,
   UpdateWorkspaceMemberBody,
+  WorkspaceAsset,
+  WorkspaceAssetListResponse,
   WorkspaceInvite,
   WorkspaceInviteListResponse,
   WorkspaceListResponse,

@@ -1,9 +1,14 @@
 export { storageEnv, isStorageConfigured } from "./env.js";
 export {
+  buildWorkspaceAssetKey,
   buildWorkspaceAvatarKey,
   buildWorkspaceUploadsPrefix,
+  getAssetExtension,
   getAvatarExtension,
+  parseWorkspaceIdFromAssetKey,
   parseWorkspaceIdFromAvatarKey,
+  parseWorkspaceIdFromWorkspaceUploadKey,
+  sanitizeAssetFileBaseName,
 } from "./keys.js";
 export {
   deleteObject,

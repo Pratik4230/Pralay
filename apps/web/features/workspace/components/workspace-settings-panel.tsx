@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
 import { Button } from "@repo/ui/components/button";
 import {
@@ -32,6 +33,7 @@ import {
 } from "@/features/workspace/hooks/use-workspaces";
 import type { WorkspaceRole } from "@/features/workspace/types";
 import { canManageWorkspace } from "@/features/workspace/utils/workspace-helpers";
+import { ConfirmAlertDialog } from "@/global/components/confirm-alert-dialog";
 import { ApiRequestError } from "@/global/utils/api-client";
 
 type WorkspaceSettingsPanelProps = {
@@ -64,7 +66,7 @@ export function WorkspaceSettingsPanel({
     description?: string;
   }>({});
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   const updateWorkspace = useUpdateWorkspace(workspaceId);
   const deleteWorkspace = useDeleteWorkspace();
@@ -236,59 +238,52 @@ export function WorkspaceSettingsPanel({
       </Card>
 
       {role === "owner" ? (
-        <Card className="border-destructive/30 shadow-sm">
-          <CardHeader>
-            <CardTitle>Delete workspace</CardTitle>
-            <CardDescription>
-              Permanently delete this workspace and all related data.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {confirmDelete ? (
-              <p className="text-sm text-muted-foreground">
-                This action cannot be undone. All members will lose access.
-              </p>
-            ) : null}
-            {deleteWorkspace.error ? (
-              <FieldError>{deleteWorkspace.error.message}</FieldError>
-            ) : null}
-          </CardContent>
-          <CardFooter className="gap-3 border-t-0 bg-transparent">
-            {confirmDelete ? (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setConfirmDelete(false)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  disabled={deleteWorkspace.isPending}
-                  onClick={() =>
-                    deleteWorkspace.mutate(workspaceId, {
-                      onSuccess: onDeleted,
-                    })
-                  }
-                >
-                  {deleteWorkspace.isPending
-                    ? "Deleting..."
-                    : "Confirm delete"}
-                </Button>
-              </>
-            ) : (
+        <>
+          <ConfirmAlertDialog
+            open={deleteDialogOpen}
+            onOpenChange={setDeleteDialogOpen}
+            title="Delete workspace?"
+            description="This permanently deletes the workspace and all related data. Members will lose access. This cannot be undone."
+            confirmLabel="Delete workspace"
+            isLoading={deleteWorkspace.isPending}
+            onConfirm={async () => {
+              try {
+                await deleteWorkspace.mutateAsync(workspaceId);
+                setDeleteDialogOpen(false);
+                toast.success("Workspace deleted");
+                onDeleted();
+              } catch (error) {
+                toast.error(
+                  error instanceof Error
+                    ? error.message
+                    : "Could not delete workspace",
+                );
+              }
+            }}
+          />
+          <Card className="border-destructive/30 shadow-sm">
+            <CardHeader>
+              <CardTitle>Delete workspace</CardTitle>
+              <CardDescription>
+                Permanently delete this workspace and all related data.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {deleteWorkspace.error ? (
+                <FieldError>{deleteWorkspace.error.message}</FieldError>
+              ) : null}
+            </CardContent>
+            <CardFooter className="gap-3 border-t-0 bg-transparent">
               <Button
                 type="button"
                 variant="destructive"
-                onClick={() => setConfirmDelete(true)}
+                onClick={() => setDeleteDialogOpen(true)}
               >
                 Delete workspace
               </Button>
-            )}
-          </CardFooter>
-        </Card>
+            </CardFooter>
+          </Card>
+        </>
       ) : null}
     </div>
   );

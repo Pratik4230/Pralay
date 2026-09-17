@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@repo/ui/components/button";
 import { cn } from "@repo/ui/lib/utils";
 
+import { WorkspaceAssetsPanel } from "@/features/workspace/components/workspace-assets-panel";
 import { WorkspaceInvitesPanel } from "@/features/workspace/components/workspace-invites-panel";
 import { WorkspaceMembersPanel } from "@/features/workspace/components/workspace-members-panel";
 import { WorkspaceAvatar } from "@/features/workspace/components/workspace-avatar";
@@ -16,14 +17,14 @@ import { useMe } from "@/features/workspace/hooks/use-me";
 import { useWorkspace } from "@/features/workspace/hooks/use-workspaces";
 import { canManageWorkspace } from "@/features/workspace/utils/workspace-helpers";
 
-type WorkspaceTab = "members" | "invites" | "settings";
+type WorkspaceTab = "library" | "members" | "invites" | "settings";
 
 export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const avatarUploadFailed = searchParams.get("avatarUpload") === "failed";
   const avatarUploadMessage = searchParams.get("message");
-  const [tab, setTab] = useState<WorkspaceTab>("members");
+  const [tab, setTab] = useState<WorkspaceTab>("library");
   const workspaceQuery = useWorkspace(workspaceId);
   const meQuery = useMe();
 
@@ -57,8 +58,8 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
   const { workspace, membership } = workspaceQuery.data;
   const currentUserId = meQuery.data?.user.id ?? "";
   const tabs: WorkspaceTab[] = canManageWorkspace(membership.role)
-    ? ["members", "invites", "settings"]
-    : ["members"];
+    ? ["library", "members", "invites", "settings"]
+    : ["library", "members"];
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-6 py-10">
@@ -111,12 +112,17 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
             variant={tab === item ? "default" : "outline"}
             onClick={() => setTab(item)}
           >
-            {item.charAt(0).toUpperCase() + item.slice(1)}
+            {item === "library"
+              ? "Library"
+              : item.charAt(0).toUpperCase() + item.slice(1)}
           </Button>
         ))}
       </div>
 
       <div>
+        {tab === "library" ? (
+          <WorkspaceAssetsPanel workspaceId={workspaceId} />
+        ) : null}
         {tab === "members" ? (
           <WorkspaceMembersPanel
             workspaceId={workspaceId}

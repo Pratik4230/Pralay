@@ -1,4 +1,5 @@
 import { registerAuthHandler, registerAuthRoutes } from "./features/auth/index.js";
+import { registerAssetsFeature } from "./features/assets/index.js";
 import { registerMediaFeature } from "./features/media/index.js";
 import { registerSystemFeature } from "./features/system/index.js";
 import { registerWorkspaceFeature } from "./features/workspace/index.js";
@@ -15,6 +16,7 @@ app.use("/api/v1/*", sessionMiddleware);
 
 registerAuthRoutes(app);
 registerWorkspaceFeature(app);
+registerAssetsFeature(app);
 registerMediaFeature(app);
 
 registerOpenApiDoc(app);

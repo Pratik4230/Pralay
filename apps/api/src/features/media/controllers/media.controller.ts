@@ -5,7 +5,7 @@ import {
   createPresignedDownloadUrl,
   getMediaUrl,
   isStorageConfigured,
-  parseWorkspaceIdFromAvatarKey,
+  parseWorkspaceIdFromWorkspaceUploadKey,
 } from "@repo/storage";
 import { createApiError, unauthorizedError } from "@repo/validators";
 
@@ -43,7 +43,7 @@ export async function getMediaController(
     return c.json(storageNotConfiguredError, 503);
   }
 
-  const workspaceId = parseWorkspaceIdFromAvatarKey(key);
+  const workspaceId = parseWorkspaceIdFromWorkspaceUploadKey(key);
   if (workspaceId) {
     const workspace = await getWorkspaceForUser(session.user.id, workspaceId);
     if (!workspace) {
