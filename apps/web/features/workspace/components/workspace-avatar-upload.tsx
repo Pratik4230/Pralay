@@ -5,12 +5,18 @@ import { useRef, useState } from "react";
 import { Button } from "@repo/ui/components/button";
 import {
   Field,
+  FieldDescription,
   FieldError,
   FieldLabel,
 } from "@repo/ui/components/field";
+import { Input } from "@repo/ui/components/input";
 
 import { WorkspaceAvatar } from "@/features/workspace/components/workspace-avatar";
 import { useUploadWorkspaceAvatar } from "@/features/workspace/hooks/use-workspace-avatar";
+import {
+  defaultAvatarFileName,
+  validateWorkspaceAvatarFile,
+} from "@/features/workspace/utils/upload-workspace-avatar";
 
 type WorkspaceAvatarUploadProps = {
   workspaceId: string;
@@ -26,31 +32,73 @@ export function WorkspaceAvatarUpload({
   avatarKey,
 }: WorkspaceAvatarUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [imageName, setImageName] = useState("");
   const [localPreview, setLocalPreview] = useState<string | null>(null);
+  const [fieldError, setFieldError] = useState<string | null>(null);
   const uploadAvatar = useUploadWorkspaceAvatar(workspaceId);
+
+  function clearSelection() {
+    setSelectedFile(null);
+    setImageName("");
+    if (localPreview) {
+      URL.revokeObjectURL(localPreview);
+    }
+    setLocalPreview(null);
+    if (inputRef.current) {
+      inputRef.current.value = "";
+    }
+  }
 
   function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
+    setFieldError(null);
+    uploadAvatar.reset();
+
     if (!file) {
+      clearSelection();
       return;
     }
 
-    if (!acceptedTypes.includes(file.type)) {
-      uploadAvatar.reset();
+    const validationError = validateWorkspaceAvatarFile(file);
+    if (validationError) {
+      setFieldError(validationError);
+      clearSelection();
       return;
     }
 
+    setSelectedFile(file);
+    setImageName(defaultAvatarFileName(file));
+    if (localPreview) {
+      URL.revokeObjectURL(localPreview);
+    }
     setLocalPreview(URL.createObjectURL(file));
-    uploadAvatar.mutate(file, {
-      onSuccess: () => {
-        setLocalPreview(null);
+  }
+
+  function handleUpload() {
+    if (!selectedFile) {
+      setFieldError("Choose an image first");
+      return;
+    }
+
+    if (!imageName.trim()) {
+      setFieldError("Enter a name for this image");
+      return;
+    }
+
+    uploadAvatar.mutate(
+      { file: selectedFile, fileName: imageName.trim() },
+      {
+        onSuccess: () => {
+          clearSelection();
+        },
+        onError: (error) => {
+          setFieldError(
+            error instanceof Error ? error.message : "Upload failed",
+          );
+        },
       },
-      onSettled: () => {
-        if (inputRef.current) {
-          inputRef.current.value = "";
-        }
-      },
-    });
+    );
   }
 
   const previewKey = uploadAvatar.isSuccess
@@ -60,14 +108,14 @@ export function WorkspaceAvatarUpload({
   return (
     <Field>
       <FieldLabel>Workspace avatar</FieldLabel>
-      <div className="flex flex-wrap items-center gap-4">
+      <div className="flex flex-wrap items-start gap-4">
         <WorkspaceAvatar
           name={name}
           avatarKey={localPreview ? null : previewKey}
           previewUrl={localPreview}
           className="size-16 text-base"
         />
-        <div className="flex flex-col gap-2">
+        <div className="flex min-w-[12rem] flex-1 flex-col gap-3">
           <input
             ref={inputRef}
             type="file"
@@ -81,16 +129,50 @@ export function WorkspaceAvatarUpload({
             disabled={uploadAvatar.isPending}
             onClick={() => inputRef.current?.click()}
           >
-            {uploadAvatar.isPending ? "Uploading..." : "Upload avatar"}
+            {selectedFile ? "Change image" : "Choose image"}
           </Button>
+          {selectedFile ? (
+            <Field>
+              <FieldLabel htmlFor={`avatar-name-${workspaceId}`}>
+                Image name
+              </FieldLabel>
+              <Input
+                id={`avatar-name-${workspaceId}`}
+                value={imageName}
+                onChange={(event) => setImageName(event.target.value)}
+                disabled={uploadAvatar.isPending}
+                maxLength={80}
+              />
+              <FieldDescription>
+                Used in storage for this file (e.g. logo, team-photo).
+              </FieldDescription>
+            </Field>
+          ) : null}
+          {selectedFile ? (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                disabled={uploadAvatar.isPending}
+                onClick={handleUpload}
+              >
+                {uploadAvatar.isPending ? "Uploading..." : "Upload avatar"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={uploadAvatar.isPending}
+                onClick={clearSelection}
+              >
+                Cancel
+              </Button>
+            </div>
+          ) : null}
           <p className="text-xs text-muted-foreground">
             JPG, PNG, or WebP up to 5 MB.
           </p>
         </div>
       </div>
-      {uploadAvatar.error ? (
-        <FieldError>{uploadAvatar.error.message}</FieldError>
-      ) : null}
+      {fieldError ? <FieldError>{fieldError}</FieldError> : null}
     </Field>
   );
 }

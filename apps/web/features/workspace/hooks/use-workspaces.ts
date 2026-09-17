@@ -9,7 +9,20 @@ import type {
   WorkspaceResponse,
 } from "@/features/workspace/types";
 import { workspaceKeys } from "@/features/workspace/utils/query-keys";
-import { fetchApiClient } from "@/global/utils/api-client";
+import { uploadWorkspaceAvatarFile } from "@/features/workspace/utils/upload-workspace-avatar";
+import {
+  fetchApiClient,
+} from "@/global/utils/api-client";
+
+export type CreateWorkspaceInput = CreateWorkspaceBody & {
+  avatarFile?: File | null;
+  avatarFileName?: string;
+};
+
+export type CreateWorkspaceResult = {
+  data: WorkspaceResponse;
+  avatarUploadFailed: boolean;
+};
 
 export function useWorkspaces() {
   return useQuery({
@@ -31,11 +44,36 @@ export function useCreateWorkspace() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (body: CreateWorkspaceBody) =>
-      fetchApiClient<WorkspaceResponse>("/api/v1/workspaces", {
-        method: "POST",
-        body: JSON.stringify(body),
-      }),
+    mutationFn: async (
+      input: CreateWorkspaceInput,
+    ): Promise<CreateWorkspaceResult> => {
+      const { avatarFile, avatarFileName, ...body } = input;
+
+      let created: WorkspaceResponse;
+      try {
+        created = await fetchApiClient<WorkspaceResponse>("/api/v1/workspaces", {
+          method: "POST",
+          body: JSON.stringify(body),
+        });
+      } catch (error) {
+        throw error;
+      }
+
+      if (!avatarFile) {
+        return { data: created, avatarUploadFailed: false };
+      }
+
+      try {
+        const updated = await uploadWorkspaceAvatarFile(
+          created.workspace.id,
+          avatarFile,
+          avatarFileName,
+        );
+        return { data: updated, avatarUploadFailed: false };
+      } catch {
+        return { data: created, avatarUploadFailed: true };
+      }
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: workspaceKeys.all });
     },

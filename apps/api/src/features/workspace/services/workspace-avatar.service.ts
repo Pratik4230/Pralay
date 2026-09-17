@@ -20,6 +20,7 @@ export async function createWorkspaceAvatarUpload(
   actorUserId: string,
   workspaceId: string,
   contentType: string,
+  fileName?: string,
 ) {
   if (!isStorageConfigured()) {
     throw new StorageNotConfiguredError();
@@ -27,7 +28,7 @@ export async function createWorkspaceAvatarUpload(
 
   await requireWorkspaceAdmin(actorUserId, workspaceId);
 
-  const avatarKey = buildWorkspaceAvatarKey(workspaceId, contentType);
+  const avatarKey = buildWorkspaceAvatarKey(workspaceId, contentType, fileName);
   const { uploadUrl, expiresIn } = await createPresignedUploadUrl({
     key: avatarKey,
     contentType,

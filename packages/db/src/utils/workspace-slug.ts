@@ -10,7 +10,7 @@ export function slugifyWorkspaceName(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, 48);
+    .slice(0, 42);
 }
 
 export async function createUniqueWorkspaceSlug(base: string): Promise<string> {

@@ -35,7 +35,7 @@ export const workspaceSlugSchema = z
   .string()
   .trim()
   .min(1, "Slug is required")
-  .max(48, "Slug must be at most 48 characters")
+  .max(42, "Slug must be at most 42 characters")
   .regex(
     /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
     "Use lowercase letters, numbers, and hyphens",
@@ -97,8 +97,15 @@ export const workspaceAvatarContentTypeSchema = z.enum([
   "image/webp",
 ]);
 
+export const workspaceAvatarFileNameSchema = z
+  .string()
+  .trim()
+  .min(1, "Image name is required")
+  .max(80, "Image name must be at most 80 characters");
+
 export const createWorkspaceAvatarUploadBodySchema = z.object({
   contentType: workspaceAvatarContentTypeSchema,
+  fileName: workspaceAvatarFileNameSchema.optional(),
 });
 
 export const workspaceAvatarUploadResponseSchema = z.object({

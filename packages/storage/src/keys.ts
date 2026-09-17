@@ -15,12 +15,25 @@ export function getAvatarExtension(contentType: string) {
   return extension;
 }
 
+export function sanitizeAvatarFileBaseName(value: string) {
+  const base = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+
+  return base || "avatar";
+}
+
 export function buildWorkspaceAvatarKey(
   workspaceId: string,
   contentType: string,
+  fileName?: string,
 ) {
   const extension = getAvatarExtension(contentType);
-  return `uploads/workspaces/${workspaceId}/avatars/${randomUUID()}.${extension}`;
+  const uniqueSuffix = randomUUID().slice(0, 8);
+  const base = fileName ? sanitizeAvatarFileBaseName(fileName) : "avatar";
+  return `uploads/workspaces/${workspaceId}/avatars/${base}-${uniqueSuffix}.${extension}`;
 }
 
 export function parseWorkspaceIdFromAvatarKey(key: string) {

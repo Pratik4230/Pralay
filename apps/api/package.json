@@ -4,8 +4,8 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "bun run --watch src/dev.ts",
-    "start": "bun run src/dev.ts",
+    "dev": "bun --env-file=../../.env run --watch src/dev.ts",
+    "start": "bun --env-file=../../.env run src/dev.ts",
     "check-types": "tsc --noEmit"
   },
   "dependencies": {

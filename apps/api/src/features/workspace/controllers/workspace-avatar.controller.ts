@@ -40,6 +40,7 @@ export async function createWorkspaceAvatarUploadController(
       session.user.id,
       workspaceId,
       body.contentType,
+      body.fileName,
     );
 
     return c.json(workspaceAvatarUploadResponseSchema.parse(result), 200);
