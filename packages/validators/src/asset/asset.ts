@@ -89,6 +89,18 @@ export const deleteWorkspaceAssetResponseSchema = z.object({
   success: z.literal(true),
 });
 
+export const bulkDeleteWorkspaceAssetsBodySchema = z.object({
+  ids: z
+    .array(z.uuid())
+    .min(1, "At least one asset id is required")
+    .max(100, "Cannot delete more than 100 assets at once"),
+});
+
+export const bulkDeleteWorkspaceAssetsResponseSchema = z.object({
+  deleted: z.array(z.uuid()),
+  failed: z.array(z.uuid()),
+});
+
 export type CreateWorkspaceAssetUploadBody = z.infer<
   typeof createWorkspaceAssetUploadBodySchema
 >;
@@ -101,4 +113,10 @@ export type WorkspaceAssetListResponse = z.infer<
 >;
 export type ListWorkspaceAssetsQuery = z.infer<
   typeof listWorkspaceAssetsQuerySchema
+>;
+export type BulkDeleteWorkspaceAssetsBody = z.infer<
+  typeof bulkDeleteWorkspaceAssetsBodySchema
+>;
+export type BulkDeleteWorkspaceAssetsResponse = z.infer<
+  typeof bulkDeleteWorkspaceAssetsResponseSchema
 >;

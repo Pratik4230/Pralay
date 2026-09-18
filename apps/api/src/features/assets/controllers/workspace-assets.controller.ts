@@ -3,6 +3,8 @@ import { z } from "zod";
 
 import {
   assetNotFoundError,
+  bulkDeleteWorkspaceAssetsBodySchema,
+  bulkDeleteWorkspaceAssetsResponseSchema,
   createApiError,
   createWorkspaceAssetBodySchema,
   createWorkspaceAssetUploadBodySchema,
@@ -22,6 +24,7 @@ import { WorkspaceAccessError } from "../../workspace/services/workspace-access.
 import {
   AssetListCursorError,
   AssetNotFoundError,
+  bulkDeleteWorkspaceAssets,
   createWorkspaceAsset,
   createWorkspaceAssetUpload,
   deleteWorkspaceAsset,
@@ -157,6 +160,32 @@ export async function deleteWorkspaceAssetController(
     }
     if (error instanceof AssetNotFoundError) {
       return c.json(assetNotFoundError, 404);
+    }
+    throw error;
+  }
+}
+
+export async function bulkDeleteWorkspaceAssetsController(
+  c: Context<{ Variables: AuthVariables }>,
+) {
+  const session = c.get("session");
+  if (!session) return c.json(unauthorizedError, 401);
+
+  const workspaceId = c.req.param("id");
+  if (!workspaceId) return c.json(workspaceNotFoundError, 404);
+
+  const body = bulkDeleteWorkspaceAssetsBodySchema.parse(await c.req.json());
+
+  try {
+    const result = await bulkDeleteWorkspaceAssets(
+      session.user.id,
+      workspaceId,
+      body.ids,
+    );
+    return c.json(bulkDeleteWorkspaceAssetsResponseSchema.parse(result), 200);
+  } catch (error) {
+    if (error instanceof WorkspaceAccessError) {
+      return c.json(workspaceNotFoundError, 404);
     }
     throw error;
   }

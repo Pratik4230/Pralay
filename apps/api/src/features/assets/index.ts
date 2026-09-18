@@ -1,11 +1,13 @@
 import type { ApiApp } from "../../global/http/create-app.js";
 import {
+  bulkDeleteWorkspaceAssetsController,
   createWorkspaceAssetController,
   createWorkspaceAssetUploadController,
   deleteWorkspaceAssetController,
   listWorkspaceAssetsController,
 } from "./controllers/workspace-assets.controller.js";
 import {
+  bulkDeleteWorkspaceAssetsRoute,
   createWorkspaceAssetRoute,
   createWorkspaceAssetUploadRoute,
   deleteWorkspaceAssetRoute,
@@ -17,4 +19,5 @@ export function registerAssetsFeature(app: ApiApp) {
   app.openapi(createWorkspaceAssetUploadRoute, createWorkspaceAssetUploadController);
   app.openapi(createWorkspaceAssetRoute, createWorkspaceAssetController);
   app.openapi(deleteWorkspaceAssetRoute, deleteWorkspaceAssetController);
+  app.openapi(bulkDeleteWorkspaceAssetsRoute, bulkDeleteWorkspaceAssetsController);
 }

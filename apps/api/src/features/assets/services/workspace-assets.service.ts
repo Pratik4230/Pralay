@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, lt, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
 
 import { db } from "@repo/db";
 import { assets } from "@repo/db/schema";
@@ -258,6 +258,50 @@ export async function deleteWorkspaceAsset(
   }
 
   return { success: true as const };
+}
+
+/**
+ * Deletes multiple assets in a single DB query and parallel S3 deletes.
+ * Much more efficient than N separate DELETE requests from the client.
+ *
+ * Returns { deleted, failed } — `failed` contains IDs that were not found
+ * or did not belong to this workspace.
+ */
+export async function bulkDeleteWorkspaceAssets(
+  actorUserId: string,
+  workspaceId: string,
+  ids: string[],
+) {
+  await requireWorkspaceMembership(actorUserId, workspaceId);
+
+  // Fetch all matching assets in one query — filters by workspace AND presence
+  const existing = await db
+    .select({ id: assets.id, s3Key: assets.s3Key })
+    .from(assets)
+    .where(
+      and(
+        eq(assets.workspaceId, workspaceId),
+        inArray(assets.id, ids),
+        isNull(assets.deletedAt),
+      ),
+    );
+
+  if (existing.length === 0) {
+    return { deleted: [] as string[], failed: ids };
+  }
+
+  const existingIds = existing.map((a) => a.id);
+
+  // Single DELETE query for all matched rows
+  await db.delete(assets).where(inArray(assets.id, existingIds));
+
+  // Parallel best-effort S3 cleanup — all fire at once within this Lambda invocation
+  await Promise.allSettled(existing.map((a) => deleteObject(a.s3Key)));
+
+  const deletedSet = new Set(existingIds);
+  const failed = ids.filter((id) => !deletedSet.has(id));
+
+  return { deleted: existingIds, failed };
 }
 
 export { WorkspaceAccessError };

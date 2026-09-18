@@ -3,6 +3,8 @@ import { z } from "zod";
 
 import {
   apiErrorSchema,
+  bulkDeleteWorkspaceAssetsBodySchema,
+  bulkDeleteWorkspaceAssetsResponseSchema,
   createWorkspaceAssetBodySchema,
   createWorkspaceAssetUploadBodySchema,
   deleteWorkspaceAssetResponseSchema,
@@ -175,6 +177,49 @@ export const deleteWorkspaceAssetRoute = createRoute({
     },
     404: {
       description: "Workspace or asset not found",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+  },
+});
+
+export const bulkDeleteWorkspaceAssetsRoute = createRoute({
+  method: "delete",
+  path: "/api/v1/workspaces/{id}/assets",
+  tags: ["Assets"],
+  summary: "Bulk delete workspace assets",
+  description:
+    "Deletes multiple assets in a single request. Uses one DB query and parallel S3 deletes. Returns which IDs were deleted and which were not found.",
+  request: {
+    params: z.object({
+      id: z.uuid(),
+    }),
+    body: {
+      content: {
+        "application/json": {
+          schema: bulkDeleteWorkspaceAssetsBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Bulk delete result",
+      content: {
+        "application/json": {
+          schema: bulkDeleteWorkspaceAssetsResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Not authenticated",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+    404: {
+      description: "Workspace not found",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+    422: {
+      description: "Validation error",
       content: { "application/json": { schema: apiErrorSchema } },
     },
   },
