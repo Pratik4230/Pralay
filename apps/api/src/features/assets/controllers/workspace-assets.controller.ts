@@ -13,6 +13,7 @@ import {
   invalidWorkspaceMediaKeyError,
   listWorkspaceAssetsQuerySchema,
   unauthorizedError,
+  updateWorkspaceAssetBodySchema,
   workspaceAssetListResponseSchema,
   workspaceAssetSchema,
   workspaceAssetUploadResponseSchema,
@@ -31,6 +32,7 @@ import {
   InvalidWorkspaceAssetKeyError,
   listWorkspaceAssets,
   StorageNotConfiguredError,
+  updateWorkspaceAsset,
 } from "../services/workspace-assets.service.js";
 
 const storageNotConfiguredError = createApiError(
@@ -186,6 +188,40 @@ export async function bulkDeleteWorkspaceAssetsController(
   } catch (error) {
     if (error instanceof WorkspaceAccessError) {
       return c.json(workspaceNotFoundError, 404);
+    }
+    throw error;
+  }
+}
+
+export async function updateWorkspaceAssetController(
+  c: Context<{ Variables: AuthVariables }>,
+) {
+  const session = c.get("session");
+  if (!session) return c.json(unauthorizedError, 401);
+
+  const workspaceId = c.req.param("id");
+  const assetId = c.req.param("assetId");
+  if (!workspaceId || !assetId) return c.json(assetNotFoundError, 404);
+
+  const body = updateWorkspaceAssetBodySchema.parse(await c.req.json());
+
+  try {
+    const asset = await updateWorkspaceAsset(
+      session.user.id,
+      workspaceId,
+      assetId,
+      body,
+    );
+    return c.json(
+      z.object({ asset: workspaceAssetSchema }).parse({ asset }),
+      200,
+    );
+  } catch (error) {
+    if (error instanceof WorkspaceAccessError) {
+      return c.json(workspaceNotFoundError, 404);
+    }
+    if (error instanceof AssetNotFoundError) {
+      return c.json(assetNotFoundError, 404);
     }
     throw error;
   }

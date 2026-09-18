@@ -89,6 +89,14 @@ export const deleteWorkspaceAssetResponseSchema = z.object({
   success: z.literal(true),
 });
 
+export const updateWorkspaceAssetBodySchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, "Name is required")
+    .max(120, "Name must be at most 120 characters"),
+});
+
 export const bulkDeleteWorkspaceAssetsBodySchema = z.object({
   ids: z
     .array(z.uuid())
@@ -119,4 +127,7 @@ export type BulkDeleteWorkspaceAssetsBody = z.infer<
 >;
 export type BulkDeleteWorkspaceAssetsResponse = z.infer<
   typeof bulkDeleteWorkspaceAssetsResponseSchema
+>;
+export type UpdateWorkspaceAssetBody = z.infer<
+  typeof updateWorkspaceAssetBodySchema
 >;

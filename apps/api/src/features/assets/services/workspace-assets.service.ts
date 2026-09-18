@@ -13,6 +13,7 @@ import {
 import type {
   CreateWorkspaceAssetBody,
   ListWorkspaceAssetsQuery,
+  UpdateWorkspaceAssetBody,
 } from "@repo/validators";
 
 import {
@@ -302,6 +303,36 @@ export async function bulkDeleteWorkspaceAssets(
   const failed = ids.filter((id) => !deletedSet.has(id));
 
   return { deleted: existingIds, failed };
+}
+
+export async function updateWorkspaceAsset(
+  actorUserId: string,
+  workspaceId: string,
+  assetId: string,
+  input: UpdateWorkspaceAssetBody,
+) {
+  await requireWorkspaceMembership(actorUserId, workspaceId);
+
+  const [updated] = await db
+    .update(assets)
+    .set({
+      name: input.name.trim(),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(assets.id, assetId),
+        eq(assets.workspaceId, workspaceId),
+        isNull(assets.deletedAt),
+      ),
+    )
+    .returning(assetSelect);
+
+  if (!updated) {
+    throw new AssetNotFoundError();
+  }
+
+  return mapAssetRow(updated as AssetRow);
 }
 
 export { WorkspaceAccessError };

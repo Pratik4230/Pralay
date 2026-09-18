@@ -5,6 +5,7 @@ import {
   createWorkspaceAssetUploadController,
   deleteWorkspaceAssetController,
   listWorkspaceAssetsController,
+  updateWorkspaceAssetController,
 } from "./controllers/workspace-assets.controller.js";
 import {
   bulkDeleteWorkspaceAssetsRoute,
@@ -12,6 +13,7 @@ import {
   createWorkspaceAssetUploadRoute,
   deleteWorkspaceAssetRoute,
   listWorkspaceAssetsRoute,
+  updateWorkspaceAssetRoute,
 } from "./routes/workspace-assets.route.js";
 
 export function registerAssetsFeature(app: ApiApp) {
@@ -20,4 +22,6 @@ export function registerAssetsFeature(app: ApiApp) {
   app.openapi(createWorkspaceAssetRoute, createWorkspaceAssetController);
   app.openapi(deleteWorkspaceAssetRoute, deleteWorkspaceAssetController);
   app.openapi(bulkDeleteWorkspaceAssetsRoute, bulkDeleteWorkspaceAssetsController);
+  app.openapi(updateWorkspaceAssetRoute, updateWorkspaceAssetController);
 }
+

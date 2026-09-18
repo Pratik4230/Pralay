@@ -9,6 +9,7 @@ import {
   createWorkspaceAssetUploadBodySchema,
   deleteWorkspaceAssetResponseSchema,
   listWorkspaceAssetsQuerySchema,
+  updateWorkspaceAssetBodySchema,
   workspaceAssetListResponseSchema,
   workspaceAssetSchema,
   workspaceAssetUploadResponseSchema,
@@ -216,6 +217,49 @@ export const bulkDeleteWorkspaceAssetsRoute = createRoute({
     },
     404: {
       description: "Workspace not found",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+    422: {
+      description: "Validation error",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+  },
+});
+
+export const updateWorkspaceAssetRoute = createRoute({
+  method: "patch",
+  path: "/api/v1/workspaces/{id}/assets/{assetId}",
+  tags: ["Assets"],
+  summary: "Rename a workspace asset",
+  description: "Updates the name of a single asset. Uses a single UPDATE WHERE id AND workspace_id query.",
+  request: {
+    params: z.object({
+      id: z.uuid(),
+      assetId: z.uuid(),
+    }),
+    body: {
+      content: {
+        "application/json": {
+          schema: updateWorkspaceAssetBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Updated asset",
+      content: {
+        "application/json": {
+          schema: z.object({ asset: workspaceAssetSchema }),
+        },
+      },
+    },
+    401: {
+      description: "Not authenticated",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+    404: {
+      description: "Workspace or asset not found",
       content: { "application/json": { schema: apiErrorSchema } },
     },
     422: {

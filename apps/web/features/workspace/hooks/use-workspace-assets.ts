@@ -62,3 +62,38 @@ export function useDeleteWorkspaceAsset(workspaceId: string) {
     },
   });
 }
+
+export function useRenameWorkspaceAsset(workspaceId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ assetId, name }: { assetId: string; name: string }) =>
+      fetchApiClient<{ asset: { id: string; name: string } }>(
+        `/api/v1/workspaces/${workspaceId}/assets/${assetId}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ name }),
+        },
+      ),
+    onSuccess: (data) => {
+      // Update the name directly in the cached pages — no refetch needed
+      queryClient.setQueriesData<{
+        pages: Array<{ assets: Array<{ id: string; name: string }> }>;
+      }>(
+        { queryKey: workspaceKeys.assets(workspaceId) },
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              assets: page.assets.map((a) =>
+                a.id === data.asset.id ? { ...a, name: data.asset.name } : a,
+              ),
+            })),
+          };
+        },
+      );
+    },
+  });
+}

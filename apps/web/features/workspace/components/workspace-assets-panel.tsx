@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { CheckIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 
@@ -18,7 +18,10 @@ import { cn } from "@repo/ui/lib/utils";
 import { WorkspaceAssetDropzone } from "@/features/workspace/components/workspace-asset-dropzone";
 import { WorkspaceAssetUploadQueue } from "@/features/workspace/components/workspace-asset-upload-queue";
 import { WorkspaceCardSkeleton } from "@/features/workspace/components/workspace-card";
-import { useInfiniteWorkspaceAssets } from "@/features/workspace/hooks/use-workspace-assets";
+import {
+  useInfiniteWorkspaceAssets,
+  useRenameWorkspaceAsset,
+} from "@/features/workspace/hooks/use-workspace-assets";
 import { useInfiniteScrollSentinel } from "@/features/workspace/hooks/use-infinite-scroll-sentinel";
 import type { WorkspaceAsset } from "@/features/workspace/types";
 import {
@@ -46,22 +49,61 @@ function AssetTile({
   isSelected,
   isAnySelected,
   onToggle,
+  onRename,
 }: {
   asset: WorkspaceAsset;
   isSelected: boolean;
   isAnySelected: boolean;
   onToggle: () => void;
+  onRename: (assetId: string, newName: string) => Promise<void>;
 }) {
   const imageUrl = getMediaUrl(asset.s3Key);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState(asset.name);
+  const [isSaving, setIsSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function startEdit(e: React.MouseEvent) {
+    e.stopPropagation(); // don't toggle selection
+    setEditValue(asset.name);
+    setIsEditing(true);
+    // focus after render
+    setTimeout(() => inputRef.current?.select(), 0);
+  }
+
+  async function commitEdit() {
+    const trimmed = editValue.trim();
+    if (!trimmed || trimmed === asset.name) {
+      setIsEditing(false);
+      return;
+    }
+    if (trimmed.length > 120) {
+      toast.error("Name must be at most 120 characters");
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await onRename(asset.id, trimmed);
+    } finally {
+      setIsSaving(false);
+      setIsEditing(false);
+    }
+  }
+
+  function cancelEdit() {
+    setEditValue(asset.name);
+    setIsEditing(false);
+  }
 
   return (
     <div
       role="checkbox"
       aria-checked={isSelected}
       aria-label={`Select ${asset.name}`}
-      tabIndex={0}
-      onClick={onToggle}
+      tabIndex={isEditing ? -1 : 0}
+      onClick={isEditing ? undefined : onToggle}
       onKeyDown={(e) => {
+        if (isEditing) return;
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           onToggle();
@@ -70,28 +112,32 @@ function AssetTile({
       className={cn(
         "group relative flex cursor-pointer flex-col gap-2 rounded-xl border bg-card p-2 shadow-sm outline-none transition-all",
         "focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
-        isSelected
-          ? "border-primary ring-2 ring-primary ring-offset-1"
-          : "border-border/60 hover:border-primary/40",
+        isEditing
+          ? "cursor-default border-primary/60"
+          : isSelected
+            ? "border-primary ring-2 ring-primary ring-offset-1"
+            : "border-border/60 hover:border-primary/40",
       )}
     >
-      {/* Checkbox overlay — always visible when something is selected, else on hover */}
-      <div
-        className={cn(
-          "absolute left-3 top-3 z-10 flex size-5 items-center justify-center rounded-md border-2 transition-all",
-          isSelected
-            ? "border-primary bg-primary"
-            : cn(
-                "border-white/80 bg-black/30 backdrop-blur-sm",
-                isAnySelected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-              ),
-        )}
-        aria-hidden
-      >
-        {isSelected ? (
-          <CheckIcon className="size-3 text-primary-foreground" strokeWidth={3} />
-        ) : null}
-      </div>
+      {/* Checkbox overlay — hidden during editing */}
+      {!isEditing ? (
+        <div
+          className={cn(
+            "absolute left-3 top-3 z-10 flex size-5 items-center justify-center rounded-md border-2 transition-all",
+            isSelected
+              ? "border-primary bg-primary"
+              : cn(
+                  "border-white/80 bg-black/30 backdrop-blur-sm",
+                  isAnySelected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                ),
+          )}
+          aria-hidden
+        >
+          {isSelected ? (
+            <CheckIcon className="size-3 text-primary-foreground" strokeWidth={3} />
+          ) : null}
+        </div>
+      ) : null}
 
       {/* Thumbnail */}
       <div className="relative aspect-square overflow-hidden rounded-lg bg-muted">
@@ -110,9 +156,54 @@ function AssetTile({
       </div>
 
       {/* Info */}
-      <div className="min-w-0 px-1 pb-1">
-        <p className="truncate text-sm font-medium">{asset.name}</p>
-        <p className="text-xs text-muted-foreground">{formatBytes(asset.sizeBytes)}</p>
+      <div className="min-w-0 px-1 pb-1" onClick={(e) => e.stopPropagation()}>
+        {isEditing ? (
+          <input
+            ref={inputRef}
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            disabled={isSaving}
+            maxLength={120}
+            autoFocus
+            className={cn(
+              "w-full rounded-md border border-primary/60 bg-background px-2 py-0.5 text-sm font-medium outline-none ring-1 ring-primary/40 transition-opacity",
+              isSaving && "opacity-50",
+            )}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void commitEdit();
+              }
+              if (e.key === "Escape") {
+                cancelEdit();
+              }
+            }}
+            onBlur={() => void commitEdit()}
+            aria-label="Asset name"
+          />
+        ) : (
+          // Tooltip wrapper — pure CSS, no extra dependency
+          <div className="group/tip relative">
+            <p
+              className="cursor-text truncate text-sm font-medium select-none"
+              onDoubleClick={startEdit}
+              title="" // suppress native tooltip
+              aria-label={`${asset.name} — double-click to rename`}
+            >
+              {asset.name}
+            </p>
+            {/* Tooltip bubble */}
+            <span
+              aria-hidden
+              className="pointer-events-none absolute -top-7 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-[10px] text-popover-foreground shadow-md ring-1 ring-border/40 opacity-0 transition-opacity duration-150 group-hover/tip:opacity-100"
+            >
+              Double-click to rename
+            </span>
+          </div>
+        )}
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {formatBytes(asset.sizeBytes)}
+        </p>
       </div>
     </div>
   );
@@ -188,6 +279,7 @@ export function WorkspaceAssetsPanel({ workspaceId }: WorkspaceAssetsPanelProps)
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
   const assetsQuery = useInfiniteWorkspaceAssets(workspaceId);
+  const renameAsset = useRenameWorkspaceAsset(workspaceId);
 
   const assets = assetsQuery.data?.pages.flatMap((page) => page.assets) ?? [];
 
@@ -230,6 +322,17 @@ export function WorkspaceAssetsPanel({ workspaceId }: WorkspaceAssetsPanelProps)
 
   function clearSelection() {
     setSelectedIds(new Set());
+  }
+
+  async function handleRename(assetId: string, newName: string) {
+    try {
+      await renameAsset.mutateAsync({ assetId, name: newName });
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Could not rename asset",
+      );
+      throw error; // re-throw so the tile can stay in edit mode
+    }
   }
 
   async function handleBulkDelete() {
@@ -303,7 +406,7 @@ export function WorkspaceAssetsPanel({ workspaceId }: WorkspaceAssetsPanelProps)
         <CardHeader>
           <CardTitle>Asset library</CardTitle>
           <CardDescription>
-            Drag images in or browse. Select one or more images to delete them.
+            Drag images in or browse · hover an image name to rename · click to select
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-6">
@@ -371,6 +474,7 @@ export function WorkspaceAssetsPanel({ workspaceId }: WorkspaceAssetsPanelProps)
                     isSelected={selectedIds.has(asset.id)}
                     isAnySelected={isAnySelected}
                     onToggle={() => toggleAsset(asset.id)}
+                    onRename={handleRename}
                   />
                 ))}
               </div>
