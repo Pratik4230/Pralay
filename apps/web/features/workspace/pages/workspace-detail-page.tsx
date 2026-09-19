@@ -11,6 +11,7 @@ import { WorkspaceAssetsPanel } from "@/features/workspace/components/workspace-
 import { WorkspaceInvitesPanel } from "@/features/workspace/components/workspace-invites-panel";
 import { WorkspaceMembersPanel } from "@/features/workspace/components/workspace-members-panel";
 import { WorkspaceProjectsPanel } from "@/features/workspace/components/workspace-projects-panel";
+import { WorkspaceTrashPanel } from "@/features/workspace/components/workspace-trash-panel";
 import { WorkspaceAvatar } from "@/features/workspace/components/workspace-avatar";
 import { WorkspaceRoleBadge } from "@/features/workspace/components/workspace-role-badge";
 import { WorkspaceSettingsPanel } from "@/features/workspace/components/workspace-settings-panel";
@@ -18,7 +19,7 @@ import { useMe } from "@/features/workspace/hooks/use-me";
 import { useWorkspace } from "@/features/workspace/hooks/use-workspaces";
 import { canManageWorkspace } from "@/features/workspace/utils/workspace-helpers";
 
-type WorkspaceTab = "projects" | "library" | "members" | "invites" | "settings";
+type WorkspaceTab = "projects" | "library" | "members" | "invites" | "settings" | "trash";
 
 export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
   const router = useRouter();
@@ -59,7 +60,7 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
   const { workspace, membership } = workspaceQuery.data;
   const currentUserId = meQuery.data?.user.id ?? "";
   const tabs: WorkspaceTab[] = canManageWorkspace(membership.role)
-    ? ["projects", "library", "members", "invites", "settings"]
+    ? ["projects", "library", "members", "invites", "settings", "trash"]
     : ["projects", "library", "members"];
 
   return (
@@ -115,7 +116,9 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
           >
             {item === "library"
               ? "Library"
-              : item.charAt(0).toUpperCase() + item.slice(1)}
+              : item === "trash"
+                ? "🗑 Trash"
+                : item.charAt(0).toUpperCase() + item.slice(1)}
           </Button>
         ))}
       </div>
@@ -150,6 +153,9 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
             role={membership.role}
             onDeleted={() => router.push("/dashboard")}
           />
+        ) : null}
+        {tab === "trash" ? (
+          <WorkspaceTrashPanel workspaceId={workspaceId} />
         ) : null}
       </div>
     </div>

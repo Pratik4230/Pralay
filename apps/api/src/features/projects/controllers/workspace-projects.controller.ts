@@ -26,6 +26,7 @@ import {
   getWorkspaceProject,
   InvalidProjectCoverKeyError,
   listWorkspaceProjects,
+  ProjectNotArchivedError,
   ProjectNotFoundError,
   StorageNotConfiguredError,
   updateWorkspaceProject,
@@ -41,6 +42,11 @@ const storageNotConfiguredError = createApiError(
 const invalidCoverKeyError = createApiError(
   "VALIDATION_ERROR",
   "Cover key is not valid for this project",
+);
+
+const projectNotArchivedError = createApiError(
+  "BAD_REQUEST",
+  "Project must be archived before it can be moved to trash",
 );
 
 // ─── Create ───────────────────────────────────────────────────────────────────
@@ -211,6 +217,12 @@ export async function deleteWorkspaceProjectController(
   } catch (error) {
     if (error instanceof WorkspaceAccessError) {
       return c.json(workspaceNotFoundError, 404);
+    }
+    if (error instanceof WorkspaceForbiddenError) {
+      return c.json(forbiddenError, 403);
+    }
+    if (error instanceof ProjectNotArchivedError) {
+      return c.json(projectNotArchivedError, 400);
     }
     if (error instanceof ProjectNotFoundError) {
       return c.json(projectNotFoundError, 404);

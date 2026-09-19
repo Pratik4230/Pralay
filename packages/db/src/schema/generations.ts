@@ -81,6 +81,8 @@ export const generations = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    deletedBy: text("deleted_by"),
   },
   (table) => [
     index("generations_workspace_status_created_at_idx").on(

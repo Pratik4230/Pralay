@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
 
 import { db } from "@repo/db";
 import { assets } from "@repo/db/schema";
@@ -227,7 +227,6 @@ export async function deleteWorkspaceAsset(
   const [existing] = await db
     .select({
       id: assets.id,
-      s3Key: assets.s3Key,
     })
     .from(assets)
     .where(
@@ -243,27 +242,20 @@ export async function deleteWorkspaceAsset(
     throw new AssetNotFoundError();
   }
 
-  const removed = await db
-    .delete(assets)
-    .where(eq(assets.id, assetId))
-    .returning({ id: assets.id });
-
-  if (removed.length === 0) {
-    throw new AssetNotFoundError();
-  }
-
-  try {
-    await deleteObject(existing.s3Key);
-  } catch {
-    // Best-effort S3 cleanup after the row is removed.
-  }
+  // Soft delete — moves to Trash with 29-day recovery window
+  await db
+    .update(assets)
+    .set({
+      deletedAt: new Date(),
+      deletedBy: actorUserId,
+    })
+    .where(eq(assets.id, assetId));
 
   return { success: true as const };
 }
 
 /**
- * Deletes multiple assets in a single DB query and parallel S3 deletes.
- * Much more efficient than N separate DELETE requests from the client.
+ * Moves multiple assets to trash in a single DB query.
  *
  * Returns { deleted, failed } — `failed` contains IDs that were not found
  * or did not belong to this workspace.
@@ -275,9 +267,9 @@ export async function bulkDeleteWorkspaceAssets(
 ) {
   await requireWorkspaceMembership(actorUserId, workspaceId);
 
-  // Fetch all matching assets in one query — filters by workspace AND presence
+  // Fetch all matching active assets in one query
   const existing = await db
-    .select({ id: assets.id, s3Key: assets.s3Key })
+    .select({ id: assets.id })
     .from(assets)
     .where(
       and(
@@ -293,16 +285,94 @@ export async function bulkDeleteWorkspaceAssets(
 
   const existingIds = existing.map((a) => a.id);
 
-  // Single DELETE query for all matched rows
-  await db.delete(assets).where(inArray(assets.id, existingIds));
-
-  // Parallel best-effort S3 cleanup — all fire at once within this Lambda invocation
-  await Promise.allSettled(existing.map((a) => deleteObject(a.s3Key)));
+  // Soft delete all matched rows
+  await db
+    .update(assets)
+    .set({
+      deletedAt: new Date(),
+      deletedBy: actorUserId,
+    })
+    .where(inArray(assets.id, existingIds));
 
   const deletedSet = new Set(existingIds);
   const failed = ids.filter((id) => !deletedSet.has(id));
 
   return { deleted: existingIds, failed };
+}
+
+export async function restoreWorkspaceAsset(
+  actorUserId: string,
+  workspaceId: string,
+  assetId: string,
+) {
+  await requireWorkspaceMembership(actorUserId, workspaceId);
+
+  const [existing] = await db
+    .select({ id: assets.id })
+    .from(assets)
+    .where(
+      and(
+        eq(assets.id, assetId),
+        eq(assets.workspaceId, workspaceId),
+        isNotNull(assets.deletedAt),
+      ),
+    )
+    .limit(1);
+
+  if (!existing) {
+    throw new AssetNotFoundError();
+  }
+
+  await db
+    .update(assets)
+    .set({
+      deletedAt: null,
+      deletedBy: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(assets.id, assetId));
+
+  return { success: true as const };
+}
+
+export async function permanentlyDeleteWorkspaceAsset(
+  actorUserId: string,
+  workspaceId: string,
+  assetId: string,
+) {
+  // Permanent delete is owner-only
+  const { requireWorkspaceOwner } = await import(
+    "../../workspace/services/workspace-access.service.js"
+  );
+  await requireWorkspaceOwner(actorUserId, workspaceId);
+
+  const [existing] = await db
+    .select({ id: assets.id, s3Key: assets.s3Key, thumbnailKey: assets.thumbnailKey })
+    .from(assets)
+    .where(
+      and(
+        eq(assets.id, assetId),
+        eq(assets.workspaceId, workspaceId),
+      ),
+    )
+    .limit(1);
+
+  if (!existing) {
+    throw new AssetNotFoundError();
+  }
+
+  await db.delete(assets).where(eq(assets.id, assetId));
+
+  try {
+    await deleteObject(existing.s3Key);
+    if (existing.thumbnailKey) {
+      await deleteObject(existing.thumbnailKey);
+    }
+  } catch {
+    // Best-effort S3 cleanup
+  }
+
+  return { success: true as const };
 }
 
 export async function updateWorkspaceAsset(

@@ -15,8 +15,16 @@ export const workspaceKeys = {
     ["workspaces", workspaceId, "projects"] as const,
   project: (workspaceId: string, projectId: string) =>
     ["workspaces", workspaceId, "projects", projectId] as const,
+  trash: (workspaceId: string) =>
+    ["workspaces", workspaceId, "trash"] as const,
+  projectTrash: (workspaceId: string, projectId: string) =>
+    ["workspaces", workspaceId, "projects", projectId, "trash"] as const,
 };
 
 export const meKeys = {
   current: ["me"] as const,
+};
+
+export const globalTrashKeys = {
+  workspaces: ["trash", "workspaces"] as const,
 };

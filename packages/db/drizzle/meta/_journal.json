@@ -29,6 +29,13 @@
       "when": 1789739655731,
       "tag": "0003_shocking_multiple_man",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789805070457,
+      "tag": "0004_spicy_solo",
+      "breakpoints": true
     }
   ]
 }

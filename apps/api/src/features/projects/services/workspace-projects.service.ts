@@ -1,4 +1,4 @@
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, ne } from "drizzle-orm";
 
 import { db } from "@repo/db";
 import { projects } from "@repo/db/schema";
@@ -18,6 +18,7 @@ import type {
 import {
   requireWorkspaceAdmin,
   requireWorkspaceMembership,
+  requireWorkspaceOwner,
   WorkspaceAccessError,
   WorkspaceForbiddenError,
 } from "../../workspace/services/workspace-access.service.js";
@@ -28,6 +29,13 @@ export class ProjectNotFoundError extends Error {
   constructor() {
     super("Project not found");
     this.name = "ProjectNotFoundError";
+  }
+}
+
+export class ProjectNotArchivedError extends Error {
+  constructor() {
+    super("Project must be archived before it can be moved to trash");
+    this.name = "ProjectNotArchivedError";
   }
 }
 
@@ -175,7 +183,10 @@ export async function listWorkspaceProjects(
 ) {
   await requireWorkspaceMembership(actorUserId, workspaceId);
 
-  const conditions = [eq(projects.workspaceId, workspaceId)];
+  const conditions = [
+    eq(projects.workspaceId, workspaceId),
+    isNull(projects.deletedAt),
+  ];
 
   if (query.status !== "all") {
     conditions.push(eq(projects.status, query.status));
@@ -203,7 +214,11 @@ export async function getWorkspaceProject(
     .select(projectSelect)
     .from(projects)
     .where(
-      and(eq(projects.workspaceId, workspaceId), eq(projects.id, projectId)),
+      and(
+        eq(projects.workspaceId, workspaceId),
+        eq(projects.id, projectId),
+        isNull(projects.deletedAt),
+      ),
     )
     .limit(1);
 
@@ -241,7 +256,11 @@ export async function updateWorkspaceProject(
     .select({ coverKey: projects.coverKey, id: projects.id })
     .from(projects)
     .where(
-      and(eq(projects.workspaceId, workspaceId), eq(projects.id, projectId)),
+      and(
+        eq(projects.workspaceId, workspaceId),
+        eq(projects.id, projectId),
+        isNull(projects.deletedAt),
+      ),
     )
     .limit(1);
 
@@ -268,7 +287,11 @@ export async function updateWorkspaceProject(
       updatedAt: new Date(),
     })
     .where(
-      and(eq(projects.workspaceId, workspaceId), eq(projects.id, projectId)),
+      and(
+        eq(projects.workspaceId, workspaceId),
+        eq(projects.id, projectId),
+        isNull(projects.deletedAt),
+      ),
     )
     .returning(projectSelect);
 
@@ -297,7 +320,84 @@ export async function deleteWorkspaceProject(
   workspaceId: string,
   projectId: string,
 ) {
-  await requireWorkspaceMembership(actorUserId, workspaceId);
+  // Move to trash requires admin or owner role
+  await requireWorkspaceAdmin(actorUserId, workspaceId);
+
+  const [existing] = await db
+    .select({ status: projects.status })
+    .from(projects)
+    .where(
+      and(
+        eq(projects.workspaceId, workspaceId),
+        eq(projects.id, projectId),
+        isNull(projects.deletedAt),
+      ),
+    )
+    .limit(1);
+
+  if (!existing) throw new ProjectNotFoundError();
+
+  // Projects must be archived before moving to trash
+  if (existing.status !== "archived") {
+    throw new ProjectNotArchivedError();
+  }
+
+  // Soft delete — moves to Trash with 29-day recovery window
+  await db
+    .update(projects)
+    .set({
+      deletedAt: new Date(),
+      deletedBy: actorUserId,
+    })
+    .where(
+      and(eq(projects.workspaceId, workspaceId), eq(projects.id, projectId)),
+    );
+}
+
+// ─── Restore ──────────────────────────────────────────────────────────────────
+
+export async function restoreWorkspaceProject(
+  actorUserId: string,
+  workspaceId: string,
+  projectId: string,
+) {
+  await requireWorkspaceAdmin(actorUserId, workspaceId);
+
+  const [existing] = await db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(
+      and(
+        eq(projects.workspaceId, workspaceId),
+        eq(projects.id, projectId),
+        isNotNull(projects.deletedAt),
+      ),
+    )
+    .limit(1);
+
+  if (!existing) throw new ProjectNotFoundError();
+
+  await db
+    .update(projects)
+    .set({
+      deletedAt: null,
+      deletedBy: null,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(eq(projects.workspaceId, workspaceId), eq(projects.id, projectId)),
+    );
+}
+
+// ─── Permanent Delete ─────────────────────────────────────────────────────────
+
+export async function permanentlyDeleteWorkspaceProject(
+  actorUserId: string,
+  workspaceId: string,
+  projectId: string,
+) {
+  // Permanent delete is owner-only
+  await requireWorkspaceOwner(actorUserId, workspaceId);
 
   const [existing] = await db
     .select({ coverKey: projects.coverKey })

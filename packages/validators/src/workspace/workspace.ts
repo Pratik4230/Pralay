@@ -2,12 +2,15 @@ import { z } from "zod";
 
 export const workspaceRoleSchema = z.enum(["owner", "admin", "member"]);
 
+export const workspaceStatusSchema = z.enum(["active", "archived"]);
+
 export const workspaceSchema = z.object({
   id: z.uuid(),
   name: z.string(),
   slug: z.string(),
   description: z.string().nullable(),
   avatarKey: z.string().nullable(),
+  status: workspaceStatusSchema.default("active"),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
@@ -89,13 +92,15 @@ export const updateWorkspaceBodySchema = z
       .max(512, "Avatar key must be at most 512 characters")
       .nullable()
       .optional(),
+    status: workspaceStatusSchema.optional(),
   })
   .refine(
     (value) =>
       value.name !== undefined ||
       value.description !== undefined ||
       value.slug !== undefined ||
-      value.avatarKey !== undefined,
+      value.avatarKey !== undefined ||
+      value.status !== undefined,
     { message: "At least one field is required" },
   );
 

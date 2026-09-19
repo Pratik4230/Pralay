@@ -34,6 +34,8 @@ export const projects = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    deletedBy: text("deleted_by"),
   },
   (table) => [
     uniqueIndex("projects_workspace_slug_uidx").on(

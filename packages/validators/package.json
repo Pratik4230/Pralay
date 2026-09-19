@@ -8,6 +8,10 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./asset": {
+      "types": "./dist/asset/index.d.ts",
+      "default": "./dist/asset/index.js"
+    },
     "./auth": {
       "types": "./dist/auth/index.d.ts",
       "default": "./dist/auth/index.js"
@@ -16,9 +20,17 @@
       "types": "./dist/common/index.d.ts",
       "default": "./dist/common/index.js"
     },
+    "./project": {
+      "types": "./dist/project/index.d.ts",
+      "default": "./dist/project/index.js"
+    },
     "./system": {
       "types": "./dist/system/index.d.ts",
       "default": "./dist/system/index.js"
+    },
+    "./trash": {
+      "types": "./dist/trash/index.d.ts",
+      "default": "./dist/trash/index.js"
     },
     "./workspace": {
       "types": "./dist/workspace/index.d.ts",

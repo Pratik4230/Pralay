@@ -1,7 +1,7 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 import { db } from "@repo/db";
-import { workspaceMembers } from "@repo/db/schema";
+import { workspaceMembers, workspaces } from "@repo/db/schema";
 
 export type WorkspaceRole = "owner" | "admin" | "member";
 
@@ -29,7 +29,16 @@ export class WorkspaceForbiddenError extends Error {
 export async function getWorkspaceMembership(
   userId: string,
   workspaceId: string,
+  options?: { allowDeleted?: boolean },
 ): Promise<WorkspaceMembership | null> {
+  const conditions = [
+    eq(workspaceMembers.userId, userId),
+    eq(workspaceMembers.workspaceId, workspaceId),
+  ];
+  if (!options?.allowDeleted) {
+    conditions.push(isNull(workspaces.deletedAt));
+  }
+
   const [membership] = await db
     .select({
       id: workspaceMembers.id,
@@ -38,12 +47,8 @@ export async function getWorkspaceMembership(
       role: workspaceMembers.role,
     })
     .from(workspaceMembers)
-    .where(
-      and(
-        eq(workspaceMembers.userId, userId),
-        eq(workspaceMembers.workspaceId, workspaceId),
-      ),
-    )
+    .innerJoin(workspaces, eq(workspaceMembers.workspaceId, workspaces.id))
+    .where(and(...conditions))
     .limit(1);
 
   return membership ?? null;
@@ -52,8 +57,9 @@ export async function getWorkspaceMembership(
 export async function requireWorkspaceMembership(
   userId: string,
   workspaceId: string,
+  options?: { allowDeleted?: boolean },
 ): Promise<WorkspaceMembership> {
-  const membership = await getWorkspaceMembership(userId, workspaceId);
+  const membership = await getWorkspaceMembership(userId, workspaceId, options);
 
   if (!membership) {
     throw new WorkspaceAccessError();
@@ -65,8 +71,9 @@ export async function requireWorkspaceMembership(
 export async function requireWorkspaceAdmin(
   userId: string,
   workspaceId: string,
+  options?: { allowDeleted?: boolean },
 ): Promise<WorkspaceMembership> {
-  const membership = await requireWorkspaceMembership(userId, workspaceId);
+  const membership = await requireWorkspaceMembership(userId, workspaceId, options);
 
   if (membership.role === "member") {
     throw new WorkspaceForbiddenError();
@@ -78,8 +85,9 @@ export async function requireWorkspaceAdmin(
 export async function requireWorkspaceOwner(
   userId: string,
   workspaceId: string,
+  options?: { allowDeleted?: boolean },
 ): Promise<WorkspaceMembership> {
-  const membership = await requireWorkspaceMembership(userId, workspaceId);
+  const membership = await requireWorkspaceMembership(userId, workspaceId, options);
 
   if (membership.role !== "owner") {
     throw new WorkspaceForbiddenError();

@@ -23,6 +23,7 @@ import { Textarea } from "@repo/ui/components/textarea";
 import { cn } from "@repo/ui/lib/utils";
 
 import { WorkspaceAssetsPanel } from "@/features/workspace/components/workspace-assets-panel";
+import { ProjectTrashPanel } from "@/features/workspace/components/project-trash-panel";
 import {
   uploadProjectCoverFile,
   useUpdateWorkspaceProject,
@@ -30,7 +31,7 @@ import {
 } from "@/features/workspace/hooks/use-workspace-projects";
 import { getMediaUrl } from "@/global/utils/media-url";
 
-type ProjectTab = "assets" | "settings";
+type ProjectTab = "assets" | "settings" | "trash";
 
 // ─── Cover banner ─────────────────────────────────────────────────────────────
 
@@ -351,6 +352,7 @@ export function ProjectDetailPage({
   const tabs: { key: ProjectTab; label: string }[] = [
     { key: "assets", label: "Assets" },
     { key: "settings", label: "Settings" },
+    { key: "trash", label: "🗑 Trash" },
   ];
 
   return (
@@ -423,6 +425,12 @@ export function ProjectDetailPage({
             initialName={project.name}
             initialDescription={project.description}
             initialStatus={project.status}
+          />
+        ) : null}
+        {tab === "trash" ? (
+          <ProjectTrashPanel
+            workspaceId={workspaceId}
+            projectId={projectId}
           />
         ) : null}
       </div>

@@ -3,6 +3,7 @@ import { registerAssetsFeature } from "./features/assets/index.js";
 import { registerMediaFeature } from "./features/media/index.js";
 import { registerProjectsFeature } from "./features/projects/index.js";
 import { registerSystemFeature } from "./features/system/index.js";
+import { registerTrashFeature } from "./features/trash/index.js";
 import { registerWorkspaceFeature } from "./features/workspace/index.js";
 import { createApp } from "./global/http/create-app.js";
 import { registerOpenApiDoc } from "./global/http/openapi-doc.js";
@@ -20,6 +21,7 @@ registerWorkspaceFeature(app);
 registerProjectsFeature(app);
 registerAssetsFeature(app);
 registerMediaFeature(app);
+registerTrashFeature(app);
 
 registerOpenApiDoc(app);
 

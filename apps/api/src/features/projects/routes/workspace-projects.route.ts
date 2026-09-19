@@ -177,8 +177,16 @@ export const deleteWorkspaceProjectRoute = createRoute({
         "application/json": { schema: deleteWorkspaceProjectResponseSchema },
       },
     },
+    400: {
+      description: "Project not archived",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
     401: {
       description: "Not authenticated",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+    403: {
+      description: "Forbidden — admin or owner only",
       content: { "application/json": { schema: apiErrorSchema } },
     },
     404: {

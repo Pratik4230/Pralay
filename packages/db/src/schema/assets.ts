@@ -68,6 +68,7 @@ export const assets = pgTable(
       .defaultNow()
       .notNull(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    deletedBy: text("deleted_by"),
   },
   (table) => [
     index("assets_workspace_created_at_idx").on(

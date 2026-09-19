@@ -1,4 +1,4 @@
-import { and, desc, eq, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 
 import { db } from "@repo/db";
 import {
@@ -30,6 +30,7 @@ type WorkspaceRow = {
   slug: string;
   description: string | null;
   avatarKey: string | null;
+  status: "active" | "archived";
   createdAt: Date;
   updatedAt: Date;
   role: "owner" | "admin" | "member";
@@ -57,6 +58,7 @@ export function mapWorkspaceRow(row: WorkspaceRow) {
     slug: row.slug,
     description: row.description,
     avatarKey: row.avatarKey,
+    status: row.status,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     role: row.role,
@@ -70,6 +72,7 @@ const workspaceSelect = {
   slug: workspaces.slug,
   description: workspaces.description,
   avatarKey: workspaces.avatarKey,
+  status: workspaces.status,
   createdAt: workspaces.createdAt,
   updatedAt: workspaces.updatedAt,
   role: workspaceMembers.role,
@@ -83,7 +86,10 @@ export async function listWorkspacesForUser(
   const limit = query.limit;
   const fetchLimit = limit + 1;
 
-  const conditions = [eq(workspaceMembers.userId, userId)];
+  const conditions = [
+    eq(workspaceMembers.userId, userId),
+    isNull(workspaces.deletedAt),
+  ];
 
   if (query.cursor) {
     const cursor = decodeWorkspaceListCursor(query.cursor);
@@ -134,6 +140,7 @@ export async function getWorkspaceForUser(userId: string, workspaceId: string) {
       and(
         eq(workspaceMembers.userId, userId),
         eq(workspaces.id, workspaceId),
+        isNull(workspaces.deletedAt),
       ),
     )
     .limit(1);
@@ -165,6 +172,7 @@ export async function createWorkspaceForUser(
         slug: workspaces.slug,
         description: workspaces.description,
         avatarKey: workspaces.avatarKey,
+        status: workspaces.status,
         createdAt: workspaces.createdAt,
         updatedAt: workspaces.updatedAt,
       });
@@ -247,6 +255,7 @@ export async function updateWorkspaceForUser(
         : {}),
       ...(input.slug !== undefined ? { slug: input.slug } : {}),
       ...(input.avatarKey !== undefined ? { avatarKey: input.avatarKey } : {}),
+      ...(input.status !== undefined ? { status: input.status } : {}),
       updatedAt: sql`now()`,
     })
     .where(eq(workspaces.id, workspaceId));
@@ -278,6 +287,62 @@ export async function deleteWorkspaceForUser(
 ) {
   await requireWorkspaceOwner(userId, workspaceId);
 
+  const [existing] = await db
+    .select({ id: workspaces.id })
+    .from(workspaces)
+    .where(and(eq(workspaces.id, workspaceId), isNull(workspaces.deletedAt)))
+    .limit(1);
+
+  if (!existing) {
+    throw new WorkspaceAccessError();
+  }
+
+  // Soft delete — moves to Trash with 29-day recovery window
+  await db
+    .update(workspaces)
+    .set({
+      deletedAt: sql`now()`,
+      deletedBy: userId,
+    })
+    .where(eq(workspaces.id, workspaceId));
+
+  return { success: true as const };
+}
+
+export async function restoreWorkspaceForUser(
+  userId: string,
+  workspaceId: string,
+) {
+  await requireWorkspaceOwner(userId, workspaceId, { allowDeleted: true });
+
+  const [existing] = await db
+    .select({ id: workspaces.id })
+    .from(workspaces)
+    .where(and(eq(workspaces.id, workspaceId), isNotNull(workspaces.deletedAt)))
+    .limit(1);
+
+  if (!existing) {
+    throw new WorkspaceAccessError();
+  }
+
+  await db
+    .update(workspaces)
+    .set({
+      deletedAt: null,
+      deletedBy: null,
+      updatedAt: sql`now()`,
+    })
+    .where(eq(workspaces.id, workspaceId));
+
+  return { success: true as const };
+}
+
+export async function permanentlyDeleteWorkspaceForUser(
+  userId: string,
+  workspaceId: string,
+) {
+  await requireWorkspaceOwner(userId, workspaceId, { allowDeleted: true });
+
   const deleted = await db
     .delete(workspaces)
     .where(eq(workspaces.id, workspaceId))
@@ -294,4 +359,43 @@ export async function deleteWorkspaceForUser(
   }
 
   return { success: true as const };
+}
+
+export async function listTrashedWorkspacesForUser(userId: string) {
+  const rows = await db
+    .select({
+      id: workspaces.id,
+      name: workspaces.name,
+      slug: workspaces.slug,
+      avatarKey: workspaces.avatarKey,
+      deletedAt: workspaces.deletedAt,
+      deletedBy: workspaces.deletedBy,
+    })
+    .from(workspaceMembers)
+    .innerJoin(workspaces, eq(workspaceMembers.workspaceId, workspaces.id))
+    .where(
+      and(
+        eq(workspaceMembers.userId, userId),
+        eq(workspaceMembers.role, "owner"),
+        isNotNull(workspaces.deletedAt),
+      ),
+    )
+    .orderBy(desc(workspaces.deletedAt));
+
+  return rows.map((r) => {
+    const deletedDate = r.deletedAt ?? new Date();
+    const ageMs = Date.now() - deletedDate.getTime();
+    const daysSinceDeleted = Math.floor(ageMs / (1000 * 60 * 60 * 24));
+    const daysRemaining = Math.max(0, 29 - daysSinceDeleted);
+
+    return {
+      id: r.id,
+      name: r.name,
+      slug: r.slug,
+      avatarKey: r.avatarKey,
+      deletedAt: deletedDate.toISOString(),
+      deletedBy: r.deletedBy,
+      daysRemaining,
+    };
+  });
 }

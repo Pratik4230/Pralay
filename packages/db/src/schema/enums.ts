@@ -43,6 +43,11 @@ export const workspaceInviteStatusEnum = pgEnum("workspace_invite_status", [
   "revoked",
 ]);
 
+export const workspaceStatusEnum = pgEnum("workspace_status", [
+  "active",
+  "archived",
+]);
+
 export const projectMemberRoleEnum = pgEnum("project_member_role", [
   "editor",
   "viewer",
