@@ -21,6 +21,7 @@ export const projects = pgTable(
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     description: text("description"),
+    coverKey: text("cover_key"),
     status: projectStatusEnum("status").notNull().default("active"),
     contextScope: contextScopeEnum("context_scope")
       .notNull()

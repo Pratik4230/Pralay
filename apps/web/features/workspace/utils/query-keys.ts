@@ -11,6 +11,10 @@ export const workspaceKeys = {
     ["workspaces", workspaceId, "assets"] as const,
   assetsInfinite: (workspaceId: string, limit: number) =>
     ["workspaces", workspaceId, "assets", "infinite", limit] as const,
+  projects: (workspaceId: string) =>
+    ["workspaces", workspaceId, "projects"] as const,
+  project: (workspaceId: string, projectId: string) =>
+    ["workspaces", workspaceId, "projects", projectId] as const,
 };
 
 export const meKeys = {

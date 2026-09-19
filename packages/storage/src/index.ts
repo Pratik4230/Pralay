@@ -1,10 +1,12 @@
 export { storageEnv, isStorageConfigured } from "./env.js";
 export {
+  buildProjectCoverKey,
   buildWorkspaceAssetKey,
   buildWorkspaceAvatarKey,
   buildWorkspaceUploadsPrefix,
   getAssetExtension,
   getAvatarExtension,
+  parseProjectIdFromCoverKey,
   parseWorkspaceIdFromAssetKey,
   parseWorkspaceIdFromAvatarKey,
   parseWorkspaceIdFromWorkspaceUploadKey,

@@ -10,6 +10,7 @@ import { cn } from "@repo/ui/lib/utils";
 import { WorkspaceAssetsPanel } from "@/features/workspace/components/workspace-assets-panel";
 import { WorkspaceInvitesPanel } from "@/features/workspace/components/workspace-invites-panel";
 import { WorkspaceMembersPanel } from "@/features/workspace/components/workspace-members-panel";
+import { WorkspaceProjectsPanel } from "@/features/workspace/components/workspace-projects-panel";
 import { WorkspaceAvatar } from "@/features/workspace/components/workspace-avatar";
 import { WorkspaceRoleBadge } from "@/features/workspace/components/workspace-role-badge";
 import { WorkspaceSettingsPanel } from "@/features/workspace/components/workspace-settings-panel";
@@ -17,14 +18,14 @@ import { useMe } from "@/features/workspace/hooks/use-me";
 import { useWorkspace } from "@/features/workspace/hooks/use-workspaces";
 import { canManageWorkspace } from "@/features/workspace/utils/workspace-helpers";
 
-type WorkspaceTab = "library" | "members" | "invites" | "settings";
+type WorkspaceTab = "projects" | "library" | "members" | "invites" | "settings";
 
 export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const avatarUploadFailed = searchParams.get("avatarUpload") === "failed";
   const avatarUploadMessage = searchParams.get("message");
-  const [tab, setTab] = useState<WorkspaceTab>("library");
+  const [tab, setTab] = useState<WorkspaceTab>("projects");
   const workspaceQuery = useWorkspace(workspaceId);
   const meQuery = useMe();
 
@@ -58,8 +59,8 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
   const { workspace, membership } = workspaceQuery.data;
   const currentUserId = meQuery.data?.user.id ?? "";
   const tabs: WorkspaceTab[] = canManageWorkspace(membership.role)
-    ? ["library", "members", "invites", "settings"]
-    : ["library", "members"];
+    ? ["projects", "library", "members", "invites", "settings"]
+    : ["projects", "library", "members"];
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-6 py-10">
@@ -120,6 +121,9 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
       </div>
 
       <div>
+        {tab === "projects" ? (
+          <WorkspaceProjectsPanel workspaceId={workspaceId} role={membership.role} />
+        ) : null}
         {tab === "library" ? (
           <WorkspaceAssetsPanel workspaceId={workspaceId} />
         ) : null}
