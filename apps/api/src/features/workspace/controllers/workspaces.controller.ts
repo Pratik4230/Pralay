@@ -42,6 +42,8 @@ function toWorkspaceResponse(workspace: MappedWorkspace) {
       slug: workspace.slug,
       description: workspace.description,
       avatarKey: workspace.avatarKey,
+      coverImageKey: workspace.coverImageKey,
+      status: workspace.status,
       createdAt: workspace.createdAt,
       updatedAt: workspace.updatedAt,
     },

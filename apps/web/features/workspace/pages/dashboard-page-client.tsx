@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LayoutGridIcon, LayoutListIcon, PlusIcon } from "lucide-react";
 
 import { Button } from "@repo/ui/components/button";
@@ -18,8 +18,12 @@ type DashboardPageClientProps = {
 export function DashboardPageClient({ user }: DashboardPageClientProps) {
   const [createOpen, setCreateOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-  // Stable per page load — changes only on refresh
-  const [quote] = useState(() => getRandomQuote());
+  // null on server → set client-side after mount to avoid hydration mismatch
+  const [quote, setQuote] = useState<ReturnType<typeof getRandomQuote> | null>(null);
+
+  useEffect(() => {
+    setQuote(getRandomQuote());
+  }, []);
 
   const firstName = user.name.split(" ")[0] ?? user.name;
 
@@ -145,14 +149,22 @@ export function DashboardPageClient({ user }: DashboardPageClientProps) {
       {/* ── Footer quote ─────────────────────────────────────────── */}
       <footer className="mt-auto border-t border-border/60 bg-secondary/30 px-4 py-8 sm:px-6 dark:bg-secondary/10">
         <div className="mx-auto max-w-7xl">
-          <p className="font-serif text-base italic text-foreground/80 sm:text-lg">
-            &ldquo;{quote.text}&rdquo;
-          </p>
-          {quote.author ? (
-            <p className="mt-1 text-xs font-semibold text-muted-foreground">
-              — {quote.author}
+          {quote ? (
+            <>
+              <p className="font-serif text-base italic text-foreground/80 sm:text-lg">
+                &ldquo;{quote.text}&rdquo;
+              </p>
+              {quote.author ? (
+                <p className="mt-1 text-xs font-semibold text-muted-foreground">
+                  — {quote.author}
+                </p>
+              ) : null}
+            </>
+          ) : (
+            <p className="font-serif text-base italic text-foreground/30 sm:text-lg">
+              &ldquo;&rdquo;
             </p>
-          ) : null}
+          )}
           <div className="mt-3 flex items-center gap-2">
             <span className="text-xs font-bold tracking-widest text-primary">
               PRALAY
