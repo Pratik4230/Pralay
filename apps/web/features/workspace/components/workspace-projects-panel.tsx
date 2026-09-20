@@ -104,7 +104,6 @@ function ProjectCover({
   );
 }
 
-
 // ─── Project card ─────────────────────────────────────────────────────────────
 
 function ProjectCard({
@@ -124,10 +123,12 @@ function ProjectCard({
   const href = `/dashboard/workspaces/${workspaceId}/projects/${project.id}`;
 
   return (
-    <div className={cn(
-      "group flex flex-col overflow-hidden rounded-xl border bg-card shadow-sm transition-shadow hover:shadow-md",
-      isArchived && "opacity-70",
-    )}>
+    <div
+      className={cn(
+        "group flex flex-col overflow-hidden rounded-xl border bg-card shadow-sm transition-shadow hover:shadow-md",
+        isArchived && "opacity-70",
+      )}
+    >
       {/* Cover */}
       {isArchived ? (
         <div className="block">
@@ -142,7 +143,9 @@ function ProjectCard({
       {/* Info */}
       {isArchived ? (
         <div className="flex flex-1 flex-col gap-1 p-4">
-          <h3 className="truncate font-semibold text-muted-foreground">{project.name}</h3>
+          <h3 className="truncate font-semibold text-muted-foreground">
+            {project.name}
+          </h3>
           {project.description ? (
             <p className="line-clamp-2 text-sm text-muted-foreground/70">
               {project.description}
@@ -155,7 +158,10 @@ function ProjectCard({
           </div>
         </div>
       ) : (
-        <Link href={href} className="flex flex-1 flex-col gap-1 p-4 hover:bg-muted/30 transition-colors">
+        <Link
+          href={href}
+          className="flex flex-1 flex-col gap-1 p-4 hover:bg-muted/30 transition-colors"
+        >
           <h3 className="truncate font-semibold">{project.name}</h3>
           {project.description ? (
             <p className="line-clamp-2 text-sm text-muted-foreground">
@@ -416,7 +422,9 @@ export function WorkspaceProjectsPanel({
         <div className="flex items-center gap-2">
           <p className="text-sm text-muted-foreground">
             {projects.length === 0
-              ? showArchived ? "No archived projects" : "No projects yet"
+              ? showArchived
+                ? "No archived projects"
+                : "No projects yet"
               : `${projects.length} ${showArchived ? "archived" : "active"} project${projects.length === 1 ? "" : "s"}`}
           </p>
           {canManage(role) ? (

@@ -4,10 +4,12 @@ import { z } from "zod";
 import {
   apiErrorSchema,
   createWorkspaceAvatarUploadBodySchema,
+  createWorkspaceCoverUploadBodySchema,
   createWorkspaceBodySchema,
   deleteWorkspaceResponseSchema,
   updateWorkspaceBodySchema,
   workspaceAvatarUploadResponseSchema,
+  workspaceCoverUploadResponseSchema,
   listWorkspacesQuerySchema,
   workspaceListResponseSchema,
   workspaceResponseSchema,
@@ -256,6 +258,57 @@ export const createWorkspaceAvatarUploadRoute = createRoute({
       content: {
         "application/json": {
           schema: workspaceAvatarUploadResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Not authenticated",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+    403: {
+      description: "Forbidden",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+    404: {
+      description: "Workspace not found",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+    503: {
+      description: "Storage not configured",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+    422: {
+      description: "Validation error",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+  },
+});
+
+export const createWorkspaceCoverUploadRoute = createRoute({
+  method: "post",
+  path: "/api/v1/workspaces/{id}/cover/upload",
+  tags: ["Workspaces"],
+  summary: "Create workspace cover image upload URL",
+  description:
+    "Returns a presigned S3 URL for uploading a workspace cover image. Requires owner or admin role.",
+  request: {
+    params: z.object({
+      id: z.uuid(),
+    }),
+    body: {
+      content: {
+        "application/json": {
+          schema: createWorkspaceCoverUploadBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Presigned cover upload URL",
+      content: {
+        "application/json": {
+          schema: workspaceCoverUploadResponseSchema,
         },
       },
     },

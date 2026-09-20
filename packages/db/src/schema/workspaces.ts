@@ -15,6 +15,7 @@ export const workspaces = pgTable("workspaces", {
   slug: text("slug").notNull().unique(),
   description: text("description"),
   avatarKey: text("avatar_key"),
+  coverImageKey: text("cover_image_key"),
   status: workspaceStatusEnum("status").notNull().default("active"),
   defaultContextScope: contextScopeEnum("default_context_scope")
     .notNull()

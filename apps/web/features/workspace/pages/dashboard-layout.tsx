@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
-import { DashboardShell } from "@/features/workspace/components/dashboard-shell";
+import { AuthenticatedShell } from "@/global/components/authenticated-shell";
+import { dashboardNavItems } from "@/global/components/app-sidebar";
 import { getSessionServer } from "@/global/utils/session";
 
 export default async function DashboardLayout({
@@ -14,5 +15,9 @@ export default async function DashboardLayout({
     redirect("/login");
   }
 
-  return <DashboardShell>{children}</DashboardShell>;
+  return (
+    <AuthenticatedShell navItems={dashboardNavItems}>
+      {children}
+    </AuthenticatedShell>
+  );
 }

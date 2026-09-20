@@ -41,6 +41,26 @@ export function parseWorkspaceIdFromAvatarKey(key: string) {
   return match?.[1] ?? null;
 }
 
+/**
+ * Builds the S3 key for a workspace cover image.
+ * Pattern: `uploads/workspaces/{workspaceId}/covers/{base}-{uuid8}.{ext}`
+ */
+export function buildWorkspaceCoverKey(
+  workspaceId: string,
+  contentType: string,
+  fileName?: string,
+) {
+  const extension = getAvatarExtension(contentType); // same supported types
+  const uniqueSuffix = randomUUID().slice(0, 8);
+  const base = fileName ? sanitizeAvatarFileBaseName(fileName) : "cover";
+  return `uploads/workspaces/${workspaceId}/covers/${base}-${uniqueSuffix}.${extension}`;
+}
+
+export function parseWorkspaceIdFromCoverKey(key: string) {
+  const match = /^uploads\/workspaces\/([^/]+)\/covers\/.+$/.exec(key);
+  return match?.[1] ?? null;
+}
+
 const workspaceUploadKeyPattern =
   /^uploads\/workspaces\/([^/]+)\/(?:avatars|assets)\/.+$/;
 

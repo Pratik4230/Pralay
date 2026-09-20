@@ -30,11 +30,15 @@ type WorkspaceRow = {
   slug: string;
   description: string | null;
   avatarKey: string | null;
+  coverImageKey: string | null;
   status: "active" | "archived";
   createdAt: Date;
   updatedAt: Date;
   role: "owner" | "admin" | "member";
   joinedAt: Date;
+  projectCount: number;
+  assetCount: number;
+  memberCount: number;
 };
 
 export class WorkspaceSlugTakenError extends Error {
@@ -58,11 +62,17 @@ export function mapWorkspaceRow(row: WorkspaceRow) {
     slug: row.slug,
     description: row.description,
     avatarKey: row.avatarKey,
+    coverImageKey: row.coverImageKey,
     status: row.status,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     role: row.role,
     joinedAt: row.joinedAt.toISOString(),
+    stats: {
+      projectCount: row.projectCount,
+      assetCount: row.assetCount,
+      memberCount: row.memberCount,
+    },
   };
 }
 
@@ -72,11 +82,15 @@ const workspaceSelect = {
   slug: workspaces.slug,
   description: workspaces.description,
   avatarKey: workspaces.avatarKey,
+  coverImageKey: workspaces.coverImageKey,
   status: workspaces.status,
   createdAt: workspaces.createdAt,
   updatedAt: workspaces.updatedAt,
   role: workspaceMembers.role,
   joinedAt: workspaceMembers.joinedAt,
+  projectCount: sql<number>`(select count(*)::int from projects p where p.workspace_id = ${workspaces.id} and p.deleted_at is null)`,
+  assetCount: sql<number>`(select count(*)::int from assets a where a.workspace_id = ${workspaces.id} and a.deleted_at is null)`,
+  memberCount: sql<number>`(select count(*)::int from workspace_members wm where wm.workspace_id = ${workspaces.id})`,
 };
 
 export async function listWorkspacesForUser(
@@ -172,6 +186,7 @@ export async function createWorkspaceForUser(
         slug: workspaces.slug,
         description: workspaces.description,
         avatarKey: workspaces.avatarKey,
+        coverImageKey: workspaces.coverImageKey,
         status: workspaces.status,
         createdAt: workspaces.createdAt,
         updatedAt: workspaces.updatedAt,
@@ -206,6 +221,9 @@ export async function createWorkspaceForUser(
       ...workspace,
       role: membership.role,
       joinedAt: membership.joinedAt,
+      projectCount: 0,
+      assetCount: 0,
+      memberCount: 1,
     });
   });
 }
@@ -255,6 +273,7 @@ export async function updateWorkspaceForUser(
         : {}),
       ...(input.slug !== undefined ? { slug: input.slug } : {}),
       ...(input.avatarKey !== undefined ? { avatarKey: input.avatarKey } : {}),
+      ...(input.coverImageKey !== undefined ? { coverImageKey: input.coverImageKey } : {}),
       ...(input.status !== undefined ? { status: input.status } : {}),
       updatedAt: sql`now()`,
     })

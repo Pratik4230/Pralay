@@ -18,6 +18,7 @@ import {
   updateWorkspaceController,
 } from "./controllers/workspaces.controller.js";
 import { createWorkspaceAvatarUploadController } from "./controllers/workspace-avatar.controller.js";
+import { createWorkspaceCoverUploadController } from "./controllers/workspace-cover.controller.js";
 import {
   acceptWorkspaceInviteRoute,
   createWorkspaceInviteRoute,
@@ -32,6 +33,7 @@ import {
 import {
   createWorkspaceRoute,
   createWorkspaceAvatarUploadRoute,
+  createWorkspaceCoverUploadRoute,
   deleteWorkspaceRoute,
   getWorkspaceRoute,
   listWorkspacesRoute,
@@ -47,6 +49,10 @@ export function registerWorkspaceFeature(app: ApiApp) {
   app.openapi(
     createWorkspaceAvatarUploadRoute,
     createWorkspaceAvatarUploadController,
+  );
+  app.openapi(
+    createWorkspaceCoverUploadRoute,
+    createWorkspaceCoverUploadController,
   );
 
   app.openapi(listWorkspaceMembersRoute, listWorkspaceMembersController);

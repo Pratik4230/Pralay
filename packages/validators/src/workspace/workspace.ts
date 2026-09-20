@@ -10,6 +10,7 @@ export const workspaceSchema = z.object({
   slug: z.string(),
   description: z.string().nullable(),
   avatarKey: z.string().nullable(),
+  coverImageKey: z.string().nullable(),
   status: workspaceStatusSchema.default("active"),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
@@ -20,9 +21,16 @@ export const workspaceMembershipSchema = z.object({
   joinedAt: z.iso.datetime(),
 });
 
+export const workspaceStatsSchema = z.object({
+  projectCount: z.number().int().nonnegative(),
+  assetCount: z.number().int().nonnegative(),
+  memberCount: z.number().int().nonnegative(),
+});
+
 export const workspaceWithMembershipSchema = workspaceSchema.extend({
   role: workspaceRoleSchema,
   joinedAt: z.iso.datetime(),
+  stats: workspaceStatsSchema,
 });
 
 export const workspaceListResponseSchema = z.object({
@@ -92,6 +100,13 @@ export const updateWorkspaceBodySchema = z
       .max(512, "Avatar key must be at most 512 characters")
       .nullable()
       .optional(),
+    coverImageKey: z
+      .string()
+      .trim()
+      .min(1, "Cover image key is required")
+      .max(512, "Cover image key must be at most 512 characters")
+      .nullable()
+      .optional(),
     status: workspaceStatusSchema.optional(),
   })
   .refine(
@@ -131,13 +146,29 @@ export const workspaceAvatarUploadResponseSchema = z.object({
   expiresIn: z.number().int().positive(),
 });
 
+// Cover image upload (same content type support as avatar)
+export const createWorkspaceCoverUploadBodySchema = z.object({
+  contentType: workspaceAvatarContentTypeSchema,
+  fileName: workspaceAvatarFileNameSchema.optional(),
+});
+
+export const workspaceCoverUploadResponseSchema = z.object({
+  coverImageKey: z.string(),
+  uploadUrl: z.url(),
+  expiresIn: z.number().int().positive(),
+});
+
 export type CreateWorkspaceBody = z.infer<typeof createWorkspaceBodySchema>;
 export type UpdateWorkspaceBody = z.infer<typeof updateWorkspaceBodySchema>;
 export type WorkspaceRole = z.infer<typeof workspaceRoleSchema>;
 export type Workspace = z.infer<typeof workspaceSchema>;
+export type WorkspaceStats = z.infer<typeof workspaceStatsSchema>;
 export type WorkspaceWithMembership = z.infer<
   typeof workspaceWithMembershipSchema
 >;
 export type WorkspaceListResponse = z.infer<typeof workspaceListResponseSchema>;
 export type ListWorkspacesQuery = z.infer<typeof listWorkspacesQuerySchema>;
 export type WorkspaceResponse = z.infer<typeof workspaceResponseSchema>;
+export type CreateWorkspaceCoverUploadBody = z.infer<
+  typeof createWorkspaceCoverUploadBodySchema
+>;
