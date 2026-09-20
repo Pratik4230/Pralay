@@ -7,7 +7,7 @@ export function WorkspaceLibraryPage({ workspaceId }: { workspaceId: string }) {
   return (
     <WorkspaceSectionShell
       title="Library"
-      description="Upload, organize, and reuse workspace assets."
+      description="Upload shared references for the whole workspace: faces, logos, team photos, and reusable poses."
     >
       <WorkspaceAssetsPanel workspaceId={workspaceId} />
     </WorkspaceSectionShell>

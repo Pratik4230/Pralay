@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { GlobalTrashPanel } from "@/features/workspace/components/global-trash-panel";
 
 export const metadata: Metadata = {
-  title: "Global Trash — Pralay",
+  title: "Global Trash | Pralay",
   description: "Review and manage deleted workspaces",
 };
 

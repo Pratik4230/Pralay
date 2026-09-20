@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
 
 import { db } from "@repo/db";
-import { assets } from "@repo/db/schema";
+import { assets, projectAssets } from "@repo/db/schema";
 import {
   buildWorkspaceAssetKey,
   createPresignedUploadUrl,
@@ -20,6 +20,10 @@ import {
   requireWorkspaceMembership,
   WorkspaceAccessError,
 } from "../../workspace/services/workspace-access.service.js";
+import {
+  getWorkspaceProject,
+  ProjectNotFoundError,
+} from "../../projects/services/workspace-projects.service.js";
 import {
   AssetListCursorError,
   decodeAssetListCursor,
@@ -52,6 +56,7 @@ export { AssetListCursorError };
 type AssetRow = {
   id: string;
   workspaceId: string | null;
+  primaryProjectId: string | null;
   name: string;
   category: "person" | "logo" | "product" | "background" | "reference" | "other";
   mimeType: string;
@@ -67,6 +72,7 @@ export function mapAssetRow(row: AssetRow) {
   return {
     id: row.id,
     workspaceId: row.workspaceId!,
+    primaryProjectId: row.primaryProjectId,
     name: row.name,
     category: row.category,
     mimeType: row.mimeType,
@@ -82,6 +88,7 @@ export function mapAssetRow(row: AssetRow) {
 const assetSelect = {
   id: assets.id,
   workspaceId: assets.workspaceId,
+  primaryProjectId: assets.primaryProjectId,
   name: assets.name,
   category: assets.category,
   mimeType: assets.mimeType,
@@ -140,28 +147,44 @@ export async function createWorkspaceAsset(
     input.s3Key.split("/").pop()?.replace(/\.[^.]+$/, "") ||
     "Untitled";
 
-  const [asset] = await db
-    .insert(assets)
-    .values({
-      scope: "workspace",
-      workspaceId,
-      name,
-      type: "upload",
-      category: input.category ?? "other",
-      visibility: "workspace",
-      mimeType: input.contentType,
-      sizeBytes: input.sizeBytes,
-      width: input.width ?? null,
-      height: input.height ?? null,
-      s3Bucket: bucket,
-      s3Key: input.s3Key,
-      createdBy: actorUserId,
-    })
-    .returning(assetSelect);
-
-  if (!asset) {
-    throw new Error("Failed to create asset");
+  if (input.projectId) {
+    await getWorkspaceProject(actorUserId, workspaceId, input.projectId);
   }
+
+  const asset = await db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(assets)
+      .values({
+        scope: "workspace",
+        workspaceId,
+        primaryProjectId: input.projectId ?? null,
+        name,
+        type: "upload",
+        category: input.category ?? "other",
+        visibility: input.projectId ? "project" : "workspace",
+        mimeType: input.contentType,
+        sizeBytes: input.sizeBytes,
+        width: input.width ?? null,
+        height: input.height ?? null,
+        s3Bucket: bucket,
+        s3Key: input.s3Key,
+        createdBy: actorUserId,
+      })
+      .returning(assetSelect);
+
+    if (!created) {
+      throw new Error("Failed to create asset");
+    }
+
+    if (input.projectId) {
+      await tx.insert(projectAssets).values({
+        projectId: input.projectId,
+        assetId: created.id,
+      });
+    }
+
+    return created;
+  });
 
   return mapAssetRow(asset as AssetRow);
 }
@@ -169,9 +192,16 @@ export async function createWorkspaceAsset(
 export async function listWorkspaceAssets(
   actorUserId: string,
   workspaceId: string,
-  query: ListWorkspaceAssetsQuery = { limit: 24 },
+  query: ListWorkspaceAssetsQuery = { limit: 24, scope: "workspace" },
 ) {
   await requireWorkspaceMembership(actorUserId, workspaceId);
+
+  if (query.scope === "project") {
+    if (!query.projectId) {
+      throw new ProjectNotFoundError();
+    }
+    await getWorkspaceProject(actorUserId, workspaceId, query.projectId);
+  }
 
   const limit = query.limit;
   const fetchLimit = limit + 1;
@@ -182,6 +212,12 @@ export async function listWorkspaceAssets(
     eq(assets.type, "upload"),
     isNull(assets.deletedAt),
   ];
+
+  if (query.scope === "workspace") {
+    conditions.push(isNull(assets.primaryProjectId));
+  } else {
+    conditions.push(eq(assets.primaryProjectId, query.projectId!));
+  }
 
   if (query.cursor) {
     const cursor = decodeAssetListCursor(query.cursor);
@@ -405,4 +441,4 @@ export async function updateWorkspaceAsset(
   return mapAssetRow(updated as AssetRow);
 }
 
-export { WorkspaceAccessError };
+export { WorkspaceAccessError, ProjectNotFoundError };

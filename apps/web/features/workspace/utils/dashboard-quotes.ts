@@ -23,7 +23,7 @@ export const DASHBOARD_QUOTES: Quote[] = [
   // Original Pralay-flavoured quotes
   { text: "A creative workspace for the next generation." },
   { text: "Ideas are infinite. Build the ones that matter." },
-  { text: "From vision to visual — faster than ever." },
+  { text: "From vision to visual, faster than ever." },
   { text: "Every great workspace started with a single idea." },
   { text: "Create without limits. Ship without fear." },
   { text: "The canvas is always blank. What you do with it is everything." },

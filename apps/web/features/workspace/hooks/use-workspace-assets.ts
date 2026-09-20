@@ -6,6 +6,8 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 
+import type { AssetScopeFilter } from "@repo/validators";
+
 import {
   fetchWorkspaceAssetListPage,
   WORKSPACE_ASSET_PAGE_SIZE,
@@ -16,19 +18,36 @@ import { fetchApiClient } from "@/global/utils/api-client";
 
 export function useInfiniteWorkspaceAssets(
   workspaceId: string,
-  limit: number = WORKSPACE_ASSET_PAGE_SIZE,
+  options?: {
+    limit?: number;
+    scope?: AssetScopeFilter;
+    projectId?: string;
+  },
 ) {
+  const limit = options?.limit ?? WORKSPACE_ASSET_PAGE_SIZE;
+  const scope = options?.scope ?? "workspace";
+  const projectId = options?.projectId;
+
   return useInfiniteQuery({
-    queryKey: workspaceKeys.assetsInfinite(workspaceId, limit),
+    queryKey: workspaceKeys.assetsInfinite(
+      workspaceId,
+      limit,
+      scope,
+      projectId,
+    ),
     queryFn: ({ pageParam }) =>
       fetchWorkspaceAssetListPage(workspaceId, {
         limit,
+        scope,
+        projectId,
         cursor: pageParam,
       }),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) =>
       lastPage.hasMore ? lastPage.nextCursor : undefined,
-    enabled: Boolean(workspaceId),
+    enabled:
+      Boolean(workspaceId) &&
+      (scope === "workspace" || Boolean(projectId)),
   });
 }
 

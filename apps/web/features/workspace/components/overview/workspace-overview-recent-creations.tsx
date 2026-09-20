@@ -71,7 +71,10 @@ export function WorkspaceOverviewRecentCreations({
   const { data, isLoading, error } = useQuery({
     queryKey: [...workspaceKeys.assets(workspaceId), "overview-recent", RECENT_ASSET_LIMIT],
     queryFn: () =>
-      fetchWorkspaceAssetListPage(workspaceId, { limit: RECENT_ASSET_LIMIT }),
+      fetchWorkspaceAssetListPage(workspaceId, {
+        limit: RECENT_ASSET_LIMIT,
+        scope: "workspace",
+      }),
     enabled: Boolean(workspaceId),
   });
 
@@ -81,7 +84,7 @@ export function WorkspaceOverviewRecentCreations({
     <section className="space-y-4">
       <WorkspaceOverviewSectionHeader
         title="Recent creations"
-        description="Latest uploads and generated assets from your library."
+        description="Latest shared uploads from your workspace library."
         href={`${basePath}/library`}
       />
 
@@ -103,7 +106,7 @@ export function WorkspaceOverviewRecentCreations({
         <div className="rounded-xl border border-dashed border-border/70 bg-secondary/20 px-5 py-8 text-center dark:bg-secondary/10">
           <p className="text-sm font-medium">No assets yet</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Upload references, logos, and creatives to your workspace library.
+            Upload shared references, logos, and reusable photos to your workspace library.
           </p>
           <Button asChild size="sm" className="mt-4">
             <Link href={`${basePath}/library`}>Open library</Link>

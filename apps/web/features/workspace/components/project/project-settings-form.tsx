@@ -137,7 +137,7 @@ export function ProjectSettingsForm({
         <CardContent>
           <p className="text-sm text-muted-foreground">
             {initialStatus === "active"
-              ? "Archiving moves this project out of your active list. Nothing is deleted — you can restore it at any time."
+              ? "Archiving moves this project out of your active list. Nothing is deleted. You can restore it at any time."
               : "This project is archived. Restore it to make it active again."}
           </p>
         </CardContent>

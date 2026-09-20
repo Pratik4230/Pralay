@@ -46,7 +46,7 @@ export function ProjectCreatePage({
           <CardTitle className="text-base">Image Studio (Phase 2)</CardTitle>
           <CardDescription>
             Prompt-based generation, thumbnail layouts, and editing tools will
-            live here — scoped to this project&apos;s assets and brand context.
+            live here, scoped to this project&apos;s assets and brand context.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex justify-center pb-6">

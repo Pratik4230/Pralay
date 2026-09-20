@@ -5,7 +5,7 @@ import { ProfilePageClient } from "@/features/workspace/pages/profile-page-clien
 import { fetchApiServer } from "@/global/utils/api-server";
 
 export const metadata: Metadata = {
-  title: "Profile — Pralay",
+  title: "Profile | Pralay",
   description: "Manage your account and workspace memberships",
 };
 

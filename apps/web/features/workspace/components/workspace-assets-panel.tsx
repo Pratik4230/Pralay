@@ -15,6 +15,8 @@ import {
 } from "@repo/ui/components/card";
 import { cn } from "@repo/ui/lib/utils";
 
+import type { AssetScopeFilter } from "@repo/validators";
+
 import { WorkspaceAssetDropzone } from "@/features/workspace/components/workspace-asset-dropzone";
 import { WorkspaceAssetUploadQueue } from "@/features/workspace/components/workspace-asset-upload-queue";
 import { WorkspaceCardSkeleton } from "@/features/workspace/components/workspace-card";
@@ -32,10 +34,6 @@ import { ConfirmAlertDialog } from "@/global/components/confirm-alert-dialog";
 import { getMediaUrl } from "@/global/utils/media-url";
 import { fetchApiClient } from "@/global/utils/api-client";
 
-type WorkspaceAssetsPanelProps = {
-  workspaceId: string;
-};
-
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -44,16 +42,29 @@ function formatBytes(bytes: number) {
 
 // ─── Asset Tile ───────────────────────────────────────────────────────────────
 
+type WorkspaceAssetsPanelProps = {
+  workspaceId: string;
+  scope?: AssetScopeFilter;
+  projectId?: string;
+  readOnly?: boolean;
+  title?: string;
+  description?: React.ReactNode;
+  emptyMessage?: string;
+  listLabel?: string;
+};
+
 function AssetTile({
   asset,
   isSelected,
   isAnySelected,
+  readOnly = false,
   onToggle,
   onRename,
 }: {
   asset: WorkspaceAsset;
   isSelected: boolean;
   isAnySelected: boolean;
+  readOnly?: boolean;
   onToggle: () => void;
   onRename: (assetId: string, newName: string) => Promise<void>;
 }) {
@@ -97,30 +108,33 @@ function AssetTile({
 
   return (
     <div
-      role="checkbox"
-      aria-checked={isSelected}
-      aria-label={`Select ${asset.name}`}
-      tabIndex={isEditing ? -1 : 0}
-      onClick={isEditing ? undefined : onToggle}
+      role={readOnly ? undefined : "checkbox"}
+      aria-checked={readOnly ? undefined : isSelected}
+      aria-label={readOnly ? asset.name : `Select ${asset.name}`}
+      tabIndex={isEditing || readOnly ? -1 : 0}
+      onClick={isEditing || readOnly ? undefined : onToggle}
       onKeyDown={(e) => {
-        if (isEditing) return;
+        if (isEditing || readOnly) return;
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           onToggle();
         }
       }}
       className={cn(
-        "group relative flex cursor-pointer flex-col gap-2 rounded-xl border bg-card p-2 shadow-sm outline-none transition-all",
-        "focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
-        isEditing
-          ? "cursor-default border-primary/60"
-          : isSelected
-            ? "border-primary ring-2 ring-primary ring-offset-1"
-            : "border-border/60 hover:border-primary/40",
+        "group relative flex flex-col gap-2 rounded-xl border bg-card p-2 shadow-sm outline-none transition-all",
+        readOnly
+          ? "border-border/60"
+          : cn(
+              "cursor-pointer focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
+              isEditing
+                ? "cursor-default border-primary/60"
+                : isSelected
+                  ? "border-primary ring-2 ring-primary ring-offset-1"
+                  : "border-border/60 hover:border-primary/40",
+            ),
       )}
     >
-      {/* Checkbox overlay — hidden during editing */}
-      {!isEditing ? (
+      {!isEditing && !readOnly ? (
         <div
           className={cn(
             "absolute left-3 top-3 z-10 flex size-5 items-center justify-center rounded-md border-2 transition-all",
@@ -182,24 +196,27 @@ function AssetTile({
             aria-label="Asset name"
           />
         ) : (
-          // Tooltip wrapper — pure CSS, no extra dependency
-          <div className="group/tip relative">
-            <p
-              className="cursor-text truncate text-sm font-medium select-none"
-              onDoubleClick={startEdit}
-              title="" // suppress native tooltip
-              aria-label={`${asset.name} — double-click to rename`}
-            >
-              {asset.name}
-            </p>
-            {/* Tooltip bubble */}
-            <span
-              aria-hidden
-              className="pointer-events-none absolute -top-7 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-[10px] text-popover-foreground shadow-md ring-1 ring-border/40 opacity-0 transition-opacity duration-150 group-hover/tip:opacity-100"
-            >
-              Double-click to rename
-            </span>
-          </div>
+          readOnly ? (
+            <p className="truncate text-sm font-medium">{asset.name}</p>
+          ) : (
+            // Tooltip wrapper — pure CSS, no extra dependency
+            <div className="group/tip relative">
+              <p
+                className="cursor-text truncate text-sm font-medium select-none"
+                onDoubleClick={startEdit}
+                title=""
+                aria-label={`${asset.name}, double-click to rename`}
+              >
+                {asset.name}
+              </p>
+              <span
+                aria-hidden
+                className="pointer-events-none absolute -top-7 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-[10px] text-popover-foreground shadow-md ring-1 ring-border/40 opacity-0 transition-opacity duration-150 group-hover/tip:opacity-100"
+              >
+                Double-click to rename
+              </span>
+            </div>
+          )
         )}
         <p className="mt-0.5 text-xs text-muted-foreground">
           {formatBytes(asset.sizeBytes)}
@@ -272,13 +289,25 @@ function SelectionToolbar({
 
 // ─── Panel ────────────────────────────────────────────────────────────────────
 
-export function WorkspaceAssetsPanel({ workspaceId }: WorkspaceAssetsPanelProps) {
+export function WorkspaceAssetsPanel({
+  workspaceId,
+  scope = "workspace",
+  projectId,
+  readOnly = false,
+  title = "Asset library",
+  description = "Drag images in or browse · hover an image name to rename · click to select",
+  emptyMessage = "Your uploaded assets will appear below the drop zone.",
+  listLabel,
+}: WorkspaceAssetsPanelProps) {
   const [pendingUploads, setPendingUploads] = useState<PendingAssetUpload[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
-  const assetsQuery = useInfiniteWorkspaceAssets(workspaceId);
+  const assetsQuery = useInfiniteWorkspaceAssets(workspaceId, {
+    scope,
+    projectId,
+  });
   const renameAsset = useRenameWorkspaceAsset(workspaceId);
 
   const assets = assetsQuery.data?.pages.flatMap((page) => page.assets) ?? [];
@@ -366,7 +395,7 @@ export function WorkspaceAssetsPanel({ workspaceId }: WorkspaceAssetsPanelProps)
         toast.error(`Failed to delete ${failed} ${failed === 1 ? "image" : "images"}`);
       } else {
         toast.warning(
-          `${succeeded} deleted, ${failed} failed — failed items remain selected`,
+          `${succeeded} deleted, ${failed} failed. Failed items remain selected.`,
         );
       }
     } catch (error) {
@@ -383,6 +412,12 @@ export function WorkspaceAssetsPanel({ workspaceId }: WorkspaceAssetsPanelProps)
     selectedIds.size === 1
       ? `"${assets.find((a) => selectedIds.has(a.id))?.name ?? "this image"}" will be permanently deleted from storage. This cannot be undone.`
       : `${selectedIds.size} images will be permanently deleted from storage. This cannot be undone.`;
+
+  const resolvedListLabel =
+    listLabel ??
+    (scope === "project"
+      ? `Project assets (${assets.length}${assetsQuery.hasNextPage ? "+" : ""})`
+      : `In library (${assets.length}${assetsQuery.hasNextPage ? "+" : ""})`);
 
   return (
     <>
@@ -404,26 +439,26 @@ export function WorkspaceAssetsPanel({ workspaceId }: WorkspaceAssetsPanelProps)
 
       <Card className="border-border/60 shadow-sm">
         <CardHeader>
-          <CardTitle>Asset library</CardTitle>
-          <CardDescription>
-            Drag images in or browse · hover an image name to rename · click to select
-          </CardDescription>
+          <CardTitle>{title}</CardTitle>
+          <CardDescription>{description}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-6">
-          <WorkspaceAssetUploadQueue
-            workspaceId={workspaceId}
-            pending={pendingUploads}
-            onPendingChange={setPendingUploads}
-            onAddFiles={handleAddFiles}
-            onUploadComplete={() => {}}
-          />
+          {!readOnly ? (
+            <WorkspaceAssetUploadQueue
+              workspaceId={workspaceId}
+              projectId={scope === "project" ? projectId : undefined}
+              pending={pendingUploads}
+              onPendingChange={setPendingUploads}
+              onAddFiles={handleAddFiles}
+              onUploadComplete={() => {}}
+            />
+          ) : null}
 
-          {!hasPending ? (
+          {!readOnly && !hasPending ? (
             <WorkspaceAssetDropzone onFiles={handleAddFiles} />
           ) : null}
 
-          {/* Selection toolbar — visible when at least one asset is selected */}
-          {isAnySelected ? (
+          {!readOnly && isAnySelected ? (
             <SelectionToolbar
               selectedCount={selectedIds.size}
               totalCount={assets.length}
@@ -451,26 +486,26 @@ export function WorkspaceAssetsPanel({ workspaceId }: WorkspaceAssetsPanelProps)
           assets.length === 0 &&
           !hasPending ? (
             <p className="text-center text-sm text-muted-foreground">
-              Your uploaded assets will appear below the drop zone.
+              {emptyMessage}
             </p>
           ) : null}
 
           {assets.length > 0 ? (
             <div>
               <h3 className="mb-3 text-sm font-medium text-muted-foreground">
-                In library ({assets.length}
-                {assetsQuery.hasNextPage ? "+" : ""})
-                {isAnySelected ? null : (
+                {resolvedListLabel}
+                {!readOnly && !isAnySelected ? (
                   <span className="ml-2 text-xs font-normal">
                     · click to select
                   </span>
-                )}
+                ) : null}
               </h3>
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
                 {assets.map((asset) => (
                   <AssetTile
                     key={asset.id}
                     asset={asset}
+                    readOnly={readOnly}
                     isSelected={selectedIds.has(asset.id)}
                     isAnySelected={isAnySelected}
                     onToggle={() => toggleAsset(asset.id)}

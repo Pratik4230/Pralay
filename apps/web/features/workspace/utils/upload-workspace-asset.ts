@@ -34,9 +34,9 @@ export function validateWorkspaceAssetFile(file: File) {
 
 export async function uploadWorkspaceAssetFile(
   workspaceId: string,
-  input: { file: File; name: string },
+  input: { file: File; name: string; projectId?: string },
 ): Promise<WorkspaceAsset> {
-  const { file, name } = input;
+  const { file, name, projectId } = input;
   const displayName = name.trim();
 
   const validationError = validateWorkspaceAssetFile(file);
@@ -94,6 +94,7 @@ export async function uploadWorkspaceAssetFile(
         contentType,
         sizeBytes: file.size,
         name: displayName,
+        ...(projectId ? { projectId } : {}),
       }),
     },
   );
@@ -116,6 +117,7 @@ export async function uploadWorkspaceAssetBatch(
   workspaceId: string,
   items: BatchUploadItem[],
   options?: {
+    projectId?: string;
     concurrency?: number;
     onItemStatus?: (id: string, status: UploadItemStatus) => void;
     onProgress?: (completed: number, total: number) => void;
@@ -135,6 +137,7 @@ export async function uploadWorkspaceAssetBatch(
       await uploadWorkspaceAssetFile(workspaceId, {
         file: item.file,
         name: item.name.trim(),
+        projectId: options?.projectId,
       });
       options?.onItemStatus?.(item.id, "done");
       return { id: item.id, ok: true };

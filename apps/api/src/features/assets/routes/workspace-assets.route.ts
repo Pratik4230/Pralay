@@ -21,7 +21,7 @@ export const listWorkspaceAssetsRoute = createRoute({
   tags: ["Assets"],
   summary: "List workspace assets",
   description:
-    "Returns a paginated list of uploaded assets in the workspace library.",
+    "Returns a paginated list of uploaded assets. Use scope=workspace for shared library assets, or scope=project with projectId for project-specific assets.",
   request: {
     params: z.object({
       id: z.uuid(),
@@ -105,7 +105,7 @@ export const createWorkspaceAssetRoute = createRoute({
   tags: ["Assets"],
   summary: "Register uploaded asset",
   description:
-    "Creates an asset record after the file was uploaded to S3 via presigned URL.",
+    "Creates an asset record after the file was uploaded to S3 via presigned URL. Pass projectId to attach the asset to a project; omit it for workspace-level shared assets.",
   request: {
     params: z.object({
       id: z.uuid(),

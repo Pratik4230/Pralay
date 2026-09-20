@@ -32,6 +32,8 @@ export const workspaceAssetUploadResponseSchema = z.object({
   expiresIn: z.number().int().positive(),
 });
 
+export const assetScopeFilterSchema = z.enum(["workspace", "project"]);
+
 export const createWorkspaceAssetBodySchema = z.object({
   s3Key: z
     .string()
@@ -53,11 +55,13 @@ export const createWorkspaceAssetBodySchema = z.object({
   category: assetCategorySchema.optional(),
   width: z.number().int().positive().optional(),
   height: z.number().int().positive().optional(),
+  projectId: z.uuid().optional(),
 });
 
 export const workspaceAssetSchema = z.object({
   id: z.uuid(),
   workspaceId: z.uuid(),
+  primaryProjectId: z.uuid().nullable(),
   name: z.string(),
   category: assetCategorySchema,
   mimeType: z.string(),
@@ -75,10 +79,22 @@ export const workspaceAssetListResponseSchema = z.object({
   hasMore: z.boolean(),
 });
 
-export const listWorkspaceAssetsQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(50).default(24),
-  cursor: z.string().trim().min(1).optional(),
-});
+export const listWorkspaceAssetsQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(50).default(24),
+    cursor: z.string().trim().min(1).optional(),
+    scope: assetScopeFilterSchema.default("workspace"),
+    projectId: z.uuid().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.scope === "project" && !value.projectId) {
+      ctx.addIssue({
+        code: "custom",
+        message: "projectId is required when scope is project",
+        path: ["projectId"],
+      });
+    }
+  });
 
 export const workspaceAssetListCursorPayloadSchema = z.object({
   createdAt: z.iso.datetime(),
@@ -112,6 +128,7 @@ export const bulkDeleteWorkspaceAssetsResponseSchema = z.object({
 export type CreateWorkspaceAssetUploadBody = z.infer<
   typeof createWorkspaceAssetUploadBodySchema
 >;
+export type AssetScopeFilter = z.infer<typeof assetScopeFilterSchema>;
 export type CreateWorkspaceAssetBody = z.infer<
   typeof createWorkspaceAssetBodySchema
 >;

@@ -12,6 +12,7 @@ import {
   invalidAssetListCursorError,
   invalidWorkspaceMediaKeyError,
   listWorkspaceAssetsQuerySchema,
+  projectNotFoundError,
   unauthorizedError,
   updateWorkspaceAssetBodySchema,
   workspaceAssetListResponseSchema,
@@ -31,6 +32,7 @@ import {
   deleteWorkspaceAsset,
   InvalidWorkspaceAssetKeyError,
   listWorkspaceAssets,
+  ProjectNotFoundError,
   StorageNotConfiguredError,
   updateWorkspaceAsset,
 } from "../services/workspace-assets.service.js";
@@ -56,6 +58,8 @@ export async function listWorkspaceAssetsController(
   const query = listWorkspaceAssetsQuerySchema.parse({
     limit: c.req.query("limit"),
     cursor: c.req.query("cursor"),
+    scope: c.req.query("scope"),
+    projectId: c.req.query("projectId"),
   });
 
   try {
@@ -71,6 +75,9 @@ export async function listWorkspaceAssetsController(
     }
     if (error instanceof AssetListCursorError) {
       return c.json(invalidAssetListCursorError, 400);
+    }
+    if (error instanceof ProjectNotFoundError) {
+      return c.json(projectNotFoundError, 404);
     }
     throw error;
   }
@@ -134,6 +141,9 @@ export async function createWorkspaceAssetController(
     }
     if (error instanceof InvalidWorkspaceAssetKeyError) {
       return c.json(invalidWorkspaceMediaKeyError, 400);
+    }
+    if (error instanceof ProjectNotFoundError) {
+      return c.json(projectNotFoundError, 404);
     }
     throw error;
   }

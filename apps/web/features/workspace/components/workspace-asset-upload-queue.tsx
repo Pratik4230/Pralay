@@ -27,6 +27,7 @@ import {
 
 type WorkspaceAssetUploadQueueProps = {
   workspaceId: string;
+  projectId?: string;
   pending: PendingAssetUpload[];
   onPendingChange: (pending: PendingAssetUpload[]) => void;
   onAddFiles: (files: FileList) => void;
@@ -48,6 +49,7 @@ function statusLabel(status: UploadItemStatus | undefined) {
 
 export function WorkspaceAssetUploadQueue({
   workspaceId,
+  projectId,
   pending,
   onPendingChange,
   onAddFiles,
@@ -137,6 +139,7 @@ export function WorkspaceAssetUploadQueue({
         name: item.name,
       })),
       {
+        projectId,
         concurrency: WORKSPACE_ASSET_UPLOAD_CONCURRENCY,
         onItemStatus: (id, status) => {
           setItemStatus((current) => ({ ...current, [id]: status }));
@@ -185,7 +188,7 @@ export function WorkspaceAssetUploadQueue({
       toast.error(`All ${failures.length} uploads failed`);
     } else {
       toast.warning(
-        `${succeededIds.length} uploaded, ${failures.length} failed — fix or remove failed items and retry`,
+        `${succeededIds.length} uploaded, ${failures.length} failed. Fix or remove failed items and retry.`,
       );
       onUploadComplete?.();
     }

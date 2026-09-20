@@ -9,8 +9,19 @@ export const workspaceKeys = {
     ["workspaces", workspaceId, "invites"] as const,
   assets: (workspaceId: string) =>
     ["workspaces", workspaceId, "assets"] as const,
-  assetsInfinite: (workspaceId: string, limit: number) =>
-    ["workspaces", workspaceId, "assets", "infinite", limit] as const,
+  assetsInfinite: (
+    workspaceId: string,
+    limit: number,
+    scope: "workspace" | "project",
+    projectId?: string,
+  ) =>
+    [
+      ...workspaceKeys.assets(workspaceId),
+      "infinite",
+      limit,
+      scope,
+      projectId ?? "none",
+    ] as const,
   projects: (workspaceId: string) =>
     ["workspaces", workspaceId, "projects"] as const,
   project: (workspaceId: string, projectId: string) =>

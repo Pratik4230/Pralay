@@ -156,7 +156,7 @@ export function DashboardPageClient({ user }: DashboardPageClientProps) {
               </p>
               {quote.author ? (
                 <p className="mt-1 text-xs font-semibold text-muted-foreground">
-                  — {quote.author}
+                  by {quote.author}
                 </p>
               ) : null}
             </>
