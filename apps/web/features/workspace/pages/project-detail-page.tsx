@@ -13,11 +13,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import {
-  Field,
-  FieldError,
-  FieldLabel,
-} from "@repo/ui/components/field";
+import { Field, FieldError, FieldLabel } from "@repo/ui/components/field";
 import { Input } from "@repo/ui/components/input";
 import { Textarea } from "@repo/ui/components/textarea";
 import { cn } from "@repo/ui/lib/utils";
@@ -61,8 +57,7 @@ function ProjectCoverBanner({
     "from-indigo-500 to-blue-600",
   ];
   const colorIdx =
-    name.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0) %
-    colors.length;
+    name.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0) % colors.length;
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -80,9 +75,7 @@ function ProjectCoverBanner({
       await update.mutateAsync({ coverKey: newCoverKey });
       toast.success("Cover updated");
     } catch (err) {
-      setUploadError(
-        err instanceof Error ? err.message : "Upload failed",
-      );
+      setUploadError(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
       if (inputRef.current) inputRef.current.value = "";
@@ -106,8 +99,7 @@ function ProjectCoverBanner({
       <div
         className={cn(
           "relative h-44 w-full overflow-hidden rounded-xl",
-          !imageUrl &&
-            `bg-gradient-to-br ${colors[colorIdx]}`,
+          !imageUrl && `bg-linear-to-br ${colors[colorIdx]}`,
         )}
       >
         {imageUrl ? (
@@ -277,7 +269,13 @@ function ProjectSettingsPanel({
       </Card>
 
       {/* Archive / restore card */}
-      <Card className={initialStatus === "archived" ? "border-amber-300 dark:border-amber-800" : ""}>
+      <Card
+        className={
+          initialStatus === "archived"
+            ? "border-amber-300 dark:border-amber-800"
+            : ""
+        }
+      >
         <CardHeader>
           <CardTitle className="text-base">
             {initialStatus === "active" ? "Archive project" : "Restore project"}
@@ -428,10 +426,7 @@ export function ProjectDetailPage({
           />
         ) : null}
         {tab === "trash" ? (
-          <ProjectTrashPanel
-            workspaceId={workspaceId}
-            projectId={projectId}
-          />
+          <ProjectTrashPanel workspaceId={workspaceId} projectId={projectId} />
         ) : null}
       </div>
     </div>
