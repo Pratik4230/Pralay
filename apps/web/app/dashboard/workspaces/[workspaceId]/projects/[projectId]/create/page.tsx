@@ -1,4 +1,4 @@
-import { ProjectOverviewPage } from "@/features/workspace/pages/project-overview-page";
+import { ProjectCreatePage } from "@/features/workspace/pages/project-create-page";
 
 type PageProps = {
   params: Promise<{ workspaceId: string; projectId: string }>;
@@ -6,7 +6,5 @@ type PageProps = {
 
 export default async function Page({ params }: PageProps) {
   const { workspaceId, projectId } = await params;
-  return (
-    <ProjectOverviewPage workspaceId={workspaceId} projectId={projectId} />
-  );
+  return <ProjectCreatePage workspaceId={workspaceId} projectId={projectId} />;
 }

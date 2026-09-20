@@ -162,7 +162,7 @@ export function CreateWorkspaceDialog({
           if (result.avatarUploadFailed) {
             const message = result.avatarUploadError ?? "Avatar upload failed";
             router.push(
-              `${base}?avatarUpload=failed&message=${encodeURIComponent(message)}`,
+              `${base}/settings?avatarUpload=failed&message=${encodeURIComponent(message)}`,
             );
             return;
           }

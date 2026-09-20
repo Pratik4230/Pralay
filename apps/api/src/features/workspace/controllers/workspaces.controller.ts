@@ -46,6 +46,7 @@ function toWorkspaceResponse(workspace: MappedWorkspace) {
       status: workspace.status,
       createdAt: workspace.createdAt,
       updatedAt: workspace.updatedAt,
+      stats: workspace.stats,
     },
     membership: {
       role: workspace.role,

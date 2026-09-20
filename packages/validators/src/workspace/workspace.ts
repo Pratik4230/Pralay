@@ -49,8 +49,12 @@ export const workspaceListCursorPayloadSchema = z.object({
   id: z.uuid(),
 });
 
+export const workspaceDetailSchema = workspaceSchema.extend({
+  stats: workspaceStatsSchema,
+});
+
 export const workspaceResponseSchema = z.object({
-  workspace: workspaceSchema,
+  workspace: workspaceDetailSchema,
   membership: workspaceMembershipSchema,
 });
 

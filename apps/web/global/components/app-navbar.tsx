@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   BellIcon,
   ChevronDownIcon,
@@ -27,6 +28,8 @@ import { SidebarTrigger } from "@repo/ui/components/sidebar";
 import { ThemeToggle } from "@repo/ui/components/theme-toggle";
 
 import { useSignOut } from "@/features/auth/hooks/use-sign-out";
+import { isProjectRoute } from "@/features/workspace/utils/project-nav";
+import { isWorkspaceRoute } from "@/features/workspace/utils/workspace-nav";
 import { getMediaUrl } from "@/global/utils/media-url";
 
 type AppNavbarProps = {
@@ -48,8 +51,21 @@ export function AppNavbar({
   userEmail,
   userAvatarKey,
 }: AppNavbarProps) {
+  const pathname = usePathname();
   const signOut = useSignOut();
   const avatarUrl = getMediaUrl(userAvatarKey);
+  const inProject = isProjectRoute(pathname);
+  const inWorkspace = !inProject && isWorkspaceRoute(pathname);
+  const searchLabel = inProject
+    ? "Search in this project..."
+    : inWorkspace
+      ? "Search in this workspace..."
+      : "Search workspaces...";
+  const searchAriaLabel = inProject
+    ? "Search in this project"
+    : inWorkspace
+      ? "Search in this workspace"
+      : "Search workspaces";
 
   return (
     <header className="sticky top-0 z-50 flex h-14 shrink-0 items-center gap-3 border-b border-border/60 bg-background/80 px-4 backdrop-blur-md">
@@ -61,10 +77,10 @@ export function AppNavbar({
         <button
           type="button"
           className="flex h-8 w-full max-w-xs items-center gap-2 rounded-lg border border-border/60 bg-muted/50 px-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:max-w-sm"
-          aria-label="Search workspaces"
+          aria-label={searchAriaLabel}
         >
           <SearchIcon className="size-3.5 shrink-0" />
-          <span className="flex-1 text-left text-sm">Search workspaces...</span>
+          <span className="flex-1 text-left text-sm">{searchLabel}</span>
           <kbd className="hidden rounded border border-border/60 px-1.5 py-0.5 font-mono text-[10px] leading-none text-muted-foreground sm:inline-flex">
             ⌘K
           </kbd>

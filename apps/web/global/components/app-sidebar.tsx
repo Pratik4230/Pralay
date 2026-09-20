@@ -28,6 +28,20 @@ import {
   TooltipTrigger,
 } from "@repo/ui/components/tooltip";
 
+import {
+  getProjectIdsFromPath,
+  isProjectRoute,
+} from "@/features/workspace/utils/project-nav";
+import { isWorkspaceRoute } from "@/features/workspace/utils/workspace-nav";
+import {
+  ProjectSidebarFooter,
+  ProjectSidebarSections,
+} from "@/global/components/project-sidebar";
+import {
+  WorkspaceSidebarFooter,
+  WorkspaceSidebarSections,
+} from "@/global/components/workspace-sidebar";
+
 export type SidebarNavItem = {
   label: string;
   href: string;
@@ -69,10 +83,11 @@ function CreateCard() {
 
   return (
     <div className="mx-2 mb-2 overflow-hidden rounded-xl bg-foreground text-background p-4 relative">
-      {/* Decorative orange gradient blob */}
       <div className="pointer-events-none absolute -right-4 -bottom-4 size-20 rounded-full bg-primary/70 blur-2xl" />
       <p className="relative text-sm font-semibold leading-tight">
-        Create<br />Without Limits
+        Create
+        <br />
+        Without Limits
       </p>
       <p className="relative mt-1 text-xs opacity-60 leading-relaxed">
         Turn ideas into extraordinary visuals.
@@ -88,8 +103,57 @@ function CreateCard() {
   );
 }
 
+function DashboardSidebarSections({ navItems }: { navItems: SidebarNavItem[] }) {
+  const pathname = usePathname();
+
+  return (
+    <SidebarGroup>
+      <SidebarGroupContent>
+        <SidebarMenu>
+          {navItems.map((item) => {
+            const isActive = item.exact
+              ? pathname === item.href
+              : pathname === item.href ||
+                pathname.startsWith(`${item.href}/`);
+            const Icon = item.icon;
+
+            return (
+              <SidebarMenuItem key={item.href}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={isActive}
+                      className={cn(
+                        "rounded-lg transition-colors",
+                        isActive &&
+                          "bg-foreground text-background hover:bg-foreground/90 hover:text-background font-medium",
+                      )}
+                    >
+                      <Link href={item.href}>
+                        <Icon className="size-4 shrink-0" />
+                        <span>{item.label}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="text-xs">
+                    {item.label}
+                  </TooltipContent>
+                </Tooltip>
+              </SidebarMenuItem>
+            );
+          })}
+        </SidebarMenu>
+      </SidebarGroupContent>
+    </SidebarGroup>
+  );
+}
+
 export function AppSidebar({ navItems }: AppSidebarProps) {
   const pathname = usePathname();
+  const inProject = isProjectRoute(pathname);
+  const inWorkspace = !inProject && isWorkspaceRoute(pathname);
+  const projectIds = inProject ? getProjectIdsFromPath(pathname) : null;
 
   return (
     <Sidebar collapsible="icon" className="border-r border-border/60">
@@ -98,56 +162,36 @@ export function AppSidebar({ navItems }: AppSidebarProps) {
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {navItems.map((item) => {
-                const isActive = item.exact
-                  ? pathname === item.href
-                  : pathname === item.href || pathname.startsWith(item.href + "/");
-                const Icon = item.icon;
-
-                return (
-                  <SidebarMenuItem key={item.href}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <SidebarMenuButton
-                          asChild
-                          isActive={isActive}
-                          className={cn(
-                            "rounded-lg transition-colors",
-                            isActive &&
-                              "bg-foreground text-background hover:bg-foreground/90 hover:text-background font-medium",
-                          )}
-                        >
-                          <Link href={item.href}>
-                            <Icon className="size-4 shrink-0" />
-                            <span>{item.label}</span>
-                          </Link>
-                        </SidebarMenuButton>
-                      </TooltipTrigger>
-                      <TooltipContent side="right" className="text-xs">
-                        {item.label}
-                      </TooltipContent>
-                    </Tooltip>
-                  </SidebarMenuItem>
-                );
-              })}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {inProject ? (
+          <ProjectSidebarSections />
+        ) : inWorkspace ? (
+          <WorkspaceSidebarSections />
+        ) : (
+          <DashboardSidebarSections navItems={navItems} />
+        )}
       </SidebarContent>
 
-      <SidebarFooter className="pb-2">
-        <CreateCard />
-      </SidebarFooter>
+      {inProject && projectIds ? (
+        <SidebarFooter className="pb-2">
+          <ProjectSidebarFooter
+            workspaceId={projectIds.workspaceId}
+            projectId={projectIds.projectId}
+          />
+        </SidebarFooter>
+      ) : inWorkspace ? (
+        <SidebarFooter className="pb-2">
+          <WorkspaceSidebarFooter />
+        </SidebarFooter>
+      ) : (
+        <SidebarFooter className="pb-2">
+          <CreateCard />
+        </SidebarFooter>
+      )}
 
       <SidebarRail />
     </Sidebar>
   );
 }
-
-// ─── Preset nav configs for each section ─────────────────────────────────────
 
 export const dashboardNavItems: SidebarNavItem[] = [
   {

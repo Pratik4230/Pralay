@@ -1,4 +1,4 @@
-import { WorkspaceOverviewPage } from "@/features/workspace/pages/workspace-overview-page";
+import { WorkspaceLibraryPage } from "@/features/workspace/pages/workspace-library-page";
 
 type PageProps = {
   params: Promise<{ workspaceId: string }>;
@@ -6,5 +6,5 @@ type PageProps = {
 
 export default async function Page({ params }: PageProps) {
   const { workspaceId } = await params;
-  return <WorkspaceOverviewPage workspaceId={workspaceId} />;
+  return <WorkspaceLibraryPage workspaceId={workspaceId} />;
 }
