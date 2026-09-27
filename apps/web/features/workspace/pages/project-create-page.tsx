@@ -1,18 +1,18 @@
 "use client";
 
-import Link from "next/link";
-import { SparklesIcon } from "lucide-react";
+import { useMemo } from "react";
+import { useRouter } from "next/navigation";
 
-import { Button } from "@repo/ui/components/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@repo/ui/components/card";
-
+import { CreateChatPanel } from "@/features/create/components/create-chat-panel";
+import { CreateProjectAssetsRow } from "@/features/create/components/create-project-assets-row";
+import { CreatePromptHero } from "@/features/create/components/create-prompt-hero";
+import { CreateRecentSidebar } from "@/features/create/components/create-recent-sidebar";
+import { CreateThreadSelector } from "@/features/create/components/create-thread-selector";
+import { useCreateAssetOptions } from "@/features/create/hooks/use-create-asset-options";
+import { useProjectCreateUi } from "@/features/create/hooks/use-project-create-ui";
+import { useWorkspaceProject } from "@/features/workspace/hooks/use-workspace-projects";
 import { getProjectBasePath } from "@/features/workspace/utils/project-nav";
+import type { CreateAttachedAsset } from "@/features/create/types/create-ui";
 
 type ProjectCreatePageProps = {
   workspaceId: string;
@@ -23,38 +23,107 @@ export function ProjectCreatePage({
   workspaceId,
   projectId,
 }: ProjectCreatePageProps) {
-  const basePath = getProjectBasePath(workspaceId, projectId);
+  const router = useRouter();
+  const projectQuery = useWorkspaceProject(workspaceId, projectId);
+  const { options: assetOptions, isLoading: assetsLoading } =
+    useCreateAssetOptions(workspaceId, projectId);
+
+  const {
+    hydrated,
+    threads,
+    activeThread,
+    activeThreadId,
+    session,
+    recentCreations,
+    createThread,
+    selectThread,
+    submitPrompt,
+    toggleReferenceAsset,
+    setDraft,
+    setChatModel,
+  } = useProjectCreateUi(projectId);
+
+  const referenceNames = useMemo(
+    () =>
+      session.referenceAssetIds
+        .map((id) => assetOptions.find((option) => option.id === id)?.name)
+        .filter((name): name is string => Boolean(name)),
+    [session.referenceAssetIds, assetOptions],
+  );
+
+  if (projectQuery.isLoading || !hydrated) {
+    return (
+      <div className="flex h-[calc(100dvh-3.5rem)] items-center justify-center text-sm text-muted-foreground">
+        Loading…
+      </div>
+    );
+  }
+
+  if (projectQuery.error || !projectQuery.data) {
+    return (
+      <div className="p-6 text-sm text-destructive">
+        {projectQuery.error?.message ?? "Project not found"}
+      </div>
+    );
+  }
+
+  const messages = activeThread?.messages ?? [];
+  const showThread = messages.length > 0;
+  const assetsPath = `${getProjectBasePath(workspaceId, projectId)}/assets`;
+
+  function handleGenerate(attachments: CreateAttachedAsset[]) {
+    submitPrompt(session.draft, attachments, referenceNames);
+    setDraft("");
+  }
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-10 sm:px-6">
-      <div>
-        <Button asChild variant="ghost" className="mb-4 w-fit px-0">
-          <Link href={basePath}>← Back to overview</Link>
-        </Button>
-        <h1 className="text-2xl font-semibold tracking-tight">Create</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Image Studio is coming soon. This is where you&apos;ll generate
-          thumbnails, images, and edits for this project.
+    <div className="flex h-[calc(100dvh-3.5rem)] min-h-0 flex-col bg-background">
+      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border/60 px-4 py-3">
+        <CreateThreadSelector
+          threads={threads}
+          activeThreadId={activeThreadId}
+          onSelect={selectThread}
+          onCreate={createThread}
+        />
+        <p className="truncate text-xs text-muted-foreground">
+          {projectQuery.data.project.name}
         </p>
-      </div>
+      </header>
 
-      <Card className="border-dashed">
-        <CardHeader className="items-center text-center">
-          <div className="flex size-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <SparklesIcon className="size-5" />
-          </div>
-          <CardTitle className="text-base">Image Studio (Phase 2)</CardTitle>
-          <CardDescription>
-            Prompt-based generation, thumbnail layouts, and editing tools will
-            live here, scoped to this project&apos;s assets and brand context.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex justify-center pb-6">
-          <Button asChild variant="outline" size="sm">
-            <Link href={`${basePath}/assets`}>Browse project assets</Link>
-          </Button>
-        </CardContent>
-      </Card>
+      <div className="flex min-h-0 flex-1">
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {showThread ? (
+            <div className="mx-auto max-w-3xl px-4 pt-4 sm:px-6">
+              <CreateChatPanel
+                messages={messages}
+                projectName={activeThread?.title ?? "Conversation"}
+                compact
+              />
+            </div>
+          ) : null}
+
+          <CreatePromptHero
+            session={session}
+            assetOptions={assetOptions}
+            onDraftChange={setDraft}
+            onChatModelChange={setChatModel}
+            onGenerate={handleGenerate}
+            onQuickSuggestion={setDraft}
+            onOpenProjectAssets={() => router.push(assetsPath)}
+          />
+
+          <CreateProjectAssetsRow
+            workspaceId={workspaceId}
+            projectId={projectId}
+            options={assetOptions}
+            selectedIds={session.referenceAssetIds}
+            onToggle={toggleReferenceAsset}
+            isLoading={assetsLoading}
+          />
+        </div>
+
+        <CreateRecentSidebar items={recentCreations} />
+      </div>
     </div>
   );
 }

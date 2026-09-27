@@ -16,6 +16,10 @@
       "types": "./dist/auth/index.d.ts",
       "default": "./dist/auth/index.js"
     },
+    "./create": {
+      "types": "./dist/create/index.d.ts",
+      "default": "./dist/create/index.js"
+    },
     "./common": {
       "types": "./dist/common/index.d.ts",
       "default": "./dist/common/index.js"

@@ -7,3 +7,11 @@ export const isProduction = nodeEnv === "production";
 export const isDevelopment = nodeEnv === "development";
 
 export const isTest = nodeEnv === "test";
+
+export {
+  aiEnv,
+  getOpenAiApiKey,
+  getXaiApiKey,
+  hasOpenAiApiKey,
+  hasXaiApiKey,
+} from "./ai.js";
