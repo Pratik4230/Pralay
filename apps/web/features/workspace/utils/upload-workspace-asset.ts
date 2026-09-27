@@ -1,4 +1,9 @@
 import type { WorkspaceAsset } from "@repo/validators";
+import {
+  normalizeWorkspaceAssetDisplayNameOrDefault,
+  parseWorkspaceAssetDisplayName,
+  WORKSPACE_ASSET_NAME_INVALID_MESSAGE,
+} from "@repo/validators";
 
 import { fetchApiClient } from "@/global/utils/api-client";
 
@@ -17,7 +22,9 @@ const acceptedAssetTypes = ["image/jpeg", "image/png", "image/webp"] as const;
 
 export function defaultAssetFileName(file: File) {
   const baseName = file.name.replace(/\.[^.]+$/, "").trim();
-  return baseName.length > 0 ? baseName : "asset";
+  return normalizeWorkspaceAssetDisplayNameOrDefault(
+    baseName.length > 0 ? baseName : "asset",
+  );
 }
 
 export function validateWorkspaceAssetFile(file: File) {
@@ -48,8 +55,11 @@ export async function uploadWorkspaceAssetFile(
     throw new Error("Enter a name for this image");
   }
 
-  if (displayName.length > 120) {
-    throw new Error("Name must be at most 120 characters");
+  let parsedName: string;
+  try {
+    parsedName = parseWorkspaceAssetDisplayName(displayName);
+  } catch {
+    throw new Error(WORKSPACE_ASSET_NAME_INVALID_MESSAGE);
   }
 
   const contentType = file.type;
@@ -61,7 +71,7 @@ export async function uploadWorkspaceAssetFile(
     method: "POST",
     body: JSON.stringify({
       contentType,
-      fileName: displayName,
+      fileName: parsedName,
     }),
   });
 
@@ -93,7 +103,7 @@ export async function uploadWorkspaceAssetFile(
         s3Key: upload.assetKey,
         contentType,
         sizeBytes: file.size,
-        name: displayName,
+        name: parsedName,
         ...(projectId ? { projectId } : {}),
       }),
     },

@@ -16,6 +16,10 @@ import {
 import { cn } from "@repo/ui/lib/utils";
 
 import type { AssetScopeFilter } from "@repo/validators";
+import {
+  parseWorkspaceAssetDisplayName,
+  WORKSPACE_ASSET_NAME_INVALID_MESSAGE,
+} from "@repo/validators";
 
 import { WorkspaceAssetDropzone } from "@/features/workspace/components/workspace-asset-dropzone";
 import { WorkspaceAssetUploadQueue } from "@/features/workspace/components/workspace-asset-upload-queue";
@@ -88,13 +92,17 @@ function AssetTile({
       setIsEditing(false);
       return;
     }
-    if (trimmed.length > 120) {
-      toast.error("Name must be at most 120 characters");
+    let normalized: string;
+    try {
+      normalized = parseWorkspaceAssetDisplayName(trimmed);
+    } catch {
+      toast.error(WORKSPACE_ASSET_NAME_INVALID_MESSAGE);
       return;
     }
     setIsSaving(true);
     try {
-      await onRename(asset.id, trimmed);
+      await onRename(asset.id, normalized);
+      setEditValue(normalized);
     } finally {
       setIsSaving(false);
       setIsEditing(false);
@@ -295,7 +303,7 @@ export function WorkspaceAssetsPanel({
   projectId,
   readOnly = false,
   title = "Asset library",
-  description = "Drag images in or browse · hover an image name to rename · click to select",
+  description = "Drag images in or browse · names are lowercase with underscores (jonathan_gaming) · double-click to rename",
   emptyMessage = "Your uploaded assets will appear below the drop zone.",
   listLabel,
 }: WorkspaceAssetsPanelProps) {

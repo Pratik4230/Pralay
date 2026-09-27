@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
 
 import { db } from "@repo/db";
 import { assets, projectAssets } from "@repo/db/schema";
@@ -13,8 +13,12 @@ import {
 import type {
   CreateWorkspaceAssetBody,
   ListWorkspaceAssetsQuery,
+  SuggestWorkspaceAssetsQuery,
   UpdateWorkspaceAssetBody,
 } from "@repo/validators";
+import {
+  parseWorkspaceAssetDisplayName,
+} from "@repo/validators/asset";
 
 import {
   requireWorkspaceMembership,
@@ -142,10 +146,11 @@ export async function createWorkspaceAsset(
     throw new StorageNotConfiguredError();
   }
 
-  const name =
-    input.name?.trim() ||
-    input.s3Key.split("/").pop()?.replace(/\.[^.]+$/, "") ||
-    "Untitled";
+  const nameFromKey =
+    input.s3Key.split("/").pop()?.replace(/\.[^.]+$/, "") || "asset";
+  const name = input.name
+    ? parseWorkspaceAssetDisplayName(input.name)
+    : parseWorkspaceAssetDisplayName(nameFromKey);
 
   if (input.projectId) {
     await getWorkspaceProject(actorUserId, workspaceId, input.projectId);
@@ -250,6 +255,57 @@ export async function listWorkspaceAssets(
           })
         : null,
     hasMore,
+  };
+}
+
+function escapeIlikePrefix(input: string): string {
+  return input.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+}
+
+/** Prefix search for Create `@` mentions (workspace library + project assets). */
+export async function suggestWorkspaceAssetsForCreate(
+  actorUserId: string,
+  workspaceId: string,
+  query: SuggestWorkspaceAssetsQuery,
+) {
+  await requireWorkspaceMembership(actorUserId, workspaceId);
+  await getWorkspaceProject(actorUserId, workspaceId, query.projectId);
+
+  const limit = query.limit;
+  const q = query.q.trim();
+
+  const conditions = [
+    eq(assets.workspaceId, workspaceId),
+    eq(assets.scope, "workspace"),
+    eq(assets.type, "upload"),
+    isNull(assets.deletedAt),
+    or(
+      isNull(assets.primaryProjectId),
+      eq(assets.primaryProjectId, query.projectId),
+    )!,
+  ];
+
+  if (q.length > 0) {
+    conditions.push(ilike(assets.name, `${escapeIlikePrefix(q)}%`));
+  }
+
+  const rows = await db
+    .select(assetSelect)
+    .from(assets)
+    .where(and(...conditions))
+    .orderBy(asc(assets.name), asc(assets.id))
+    .limit(limit);
+
+  return {
+    items: rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      mimeType: row.mimeType,
+      s3Key: row.s3Key,
+      scope: row.primaryProjectId
+        ? ("project" as const)
+        : ("workspace" as const),
+    })),
   };
 }
 

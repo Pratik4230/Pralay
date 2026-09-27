@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
 import { Button } from "@repo/ui/components/button";
 
@@ -18,12 +19,17 @@ export function ProjectAssetsPage({
   workspaceId,
   projectId,
 }: ProjectAssetsPageProps) {
+  const [mounted, setMounted] = useState(false);
   const { data, isLoading, error } = useWorkspaceProject(
     workspaceId,
     projectId,
   );
 
-  if (isLoading) {
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted || isLoading) {
     return (
       <div className="mx-auto max-w-4xl px-4 py-10 text-sm text-muted-foreground sm:px-6">
         Loading project…

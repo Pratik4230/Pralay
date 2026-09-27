@@ -1,73 +1,47 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  ChevronDownIcon,
-  FolderOpenIcon,
-  ImagePlusIcon,
-  PlusIcon,
-  SparklesIcon,
-  Wand2Icon,
-} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { SparklesIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@repo/ui/components/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@repo/ui/components/dropdown-menu";
 import { Textarea } from "@repo/ui/components/textarea";
-
-import {
-  CREATE_CHAT_MODELS,
-  CREATE_QUICK_SUGGESTIONS,
-} from "@/features/create/constants/create-presets";
-import {
-  filterCreateAssetOptions,
-  type CreateAssetOption,
-} from "@/features/create/hooks/use-create-asset-options";
+import { useCreateAssetSuggest } from "@/features/create/hooks/use-create-asset-suggest";
+import type { CreateAssetOption } from "@/features/create/hooks/use-create-asset-options";
 import type {
   CreateAttachedAsset,
-  CreateChatModelId,
   CreateSessionState,
 } from "@/features/create/types/create-ui";
 import { getMediaUrl } from "@/global/utils/media-url";
 
 type CreatePromptHeroProps = {
+  workspaceId: string;
+  projectId: string;
   session: CreateSessionState;
-  assetOptions: CreateAssetOption[];
   onDraftChange: (value: string) => void;
-  onChatModelChange: (id: CreateChatModelId) => void;
   onGenerate: (attachments: CreateAttachedAsset[]) => void;
-  onQuickSuggestion: (prompt: string) => void;
-  onOpenProjectAssets: () => void;
 };
 
 export function CreatePromptHero({
+  workspaceId,
+  projectId,
   session,
-  assetOptions,
   onDraftChange,
-  onChatModelChange,
   onGenerate,
-  onQuickSuggestion,
-  onOpenProjectAssets,
 }: CreatePromptHeroProps) {
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
   const [attachments, setAttachments] = useState<CreateAttachedAsset[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const selectedModel =
-    CREATE_CHAT_MODELS.find((model) => model.id === session.chatModelId) ??
-    CREATE_CHAT_MODELS[0]!;
-
-  const mentionMatches = useMemo(
-    () => filterCreateAssetOptions(assetOptions, mentionQuery, 8),
-    [assetOptions, mentionQuery],
-  );
+  const { options: mentionMatches, isLoading: mentionLoading } =
+    useCreateAssetSuggest(
+      workspaceId,
+      projectId,
+      mentionQuery,
+      mentionOpen,
+    );
 
   useEffect(() => {
     const match = session.draft.match(/@([^\s@]*)$/);
@@ -117,38 +91,47 @@ export function CreatePromptHero({
           What will you create today?
         </h1>
         <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">
-          Describe your idea, attach project or workspace assets, and generate
-          in this thread.
+          Describe your idea and use @ to attach assets from your library.
         </p>
       </div>
 
       <div className="relative mt-8">
-        {mentionOpen && mentionMatches.length > 0 ? (
+        {mentionOpen ? (
           <div className="absolute bottom-full left-0 right-0 z-20 mb-2 overflow-hidden rounded-xl border border-border/60 bg-popover shadow-lg">
-            <ul className="max-h-48 overflow-y-auto p-1">
-              {mentionMatches.map((option) => (
-                <li key={option.id}>
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm hover:bg-muted/60"
-                    onClick={() => attachAsset(option)}
-                  >
-                    <div className="relative size-8 shrink-0 overflow-hidden rounded-md bg-muted">
-                      {getMediaUrl(option.s3Key) ? (
-                        <Image
-                          src={getMediaUrl(option.s3Key)!}
-                          alt=""
-                          fill
-                          unoptimized
-                          className="object-cover"
-                        />
-                      ) : null}
-                    </div>
-                    <span className="truncate">{option.name}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+            {mentionLoading ? (
+              <p className="px-3 py-2 text-xs text-muted-foreground">
+                Searching assets…
+              </p>
+            ) : mentionMatches.length > 0 ? (
+              <ul className="max-h-48 overflow-y-auto p-1">
+                {mentionMatches.map((option) => (
+                  <li key={option.id}>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm hover:bg-muted/60"
+                      onClick={() => attachAsset(option)}
+                    >
+                      <div className="relative size-8 shrink-0 overflow-hidden rounded-md bg-muted">
+                        {getMediaUrl(option.s3Key) ? (
+                          <Image
+                            src={getMediaUrl(option.s3Key)!}
+                            alt=""
+                            fill
+                            unoptimized
+                            className="object-cover"
+                          />
+                        ) : null}
+                      </div>
+                      <span className="truncate">{option.name}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="px-3 py-2 text-xs text-muted-foreground">
+                No matching assets. Try another name.
+              </p>
+            )}
           </div>
         ) : null}
 
@@ -157,7 +140,7 @@ export function CreatePromptHero({
             ref={textareaRef}
             value={session.draft}
             rows={4}
-            placeholder="Describe what you want to create… Example: YouTube thumbnail for Jonathan's championship with team, trophy, and bold CHAMPIONS text."
+            placeholder="What do you want to create?"
             className="min-h-32 resize-none rounded-none border-0 bg-transparent px-4 py-4 text-base shadow-none focus-visible:ring-0"
             onChange={(event) => onDraftChange(event.target.value)}
             onKeyDown={(event) => {
@@ -168,86 +151,16 @@ export function CreatePromptHero({
             }}
           />
 
-          <div className="flex flex-col gap-3 border-t border-border/60 bg-muted/20 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap gap-1.5">
-              <Button type="button" size="sm" variant="ghost" className="h-8 gap-1.5 text-xs">
-                <PlusIcon className="size-3.5" />
-                Add
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-8 gap-1.5 text-xs"
-                onClick={() => textareaRef.current?.focus()}
-              >
-                <ImagePlusIcon className="size-3.5" />
-                Add assets
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-8 gap-1.5 text-xs"
-                onClick={onOpenProjectAssets}
-              >
-                <FolderOpenIcon className="size-3.5" />
-                Project assets
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-8 gap-1.5 text-xs"
-                onClick={() =>
-                  toast.message("Improve prompt (coming soon)", {
-                    description: "The assistant will refine your prompt when the backend is ready.",
-                  })
-                }
-              >
-                <Wand2Icon className="size-3.5" />
-                Improve prompt
-              </Button>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 gap-1.5 text-xs"
-                  >
-                    {selectedModel.label}
-                    <ChevronDownIcon className="size-3.5 opacity-60" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {CREATE_CHAT_MODELS.map((model) => (
-                    <DropdownMenuItem
-                      key={model.id}
-                      onClick={() => onChatModelChange(model.id)}
-                    >
-                      <span className="font-medium">{model.label}</span>
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        {model.description}
-                      </span>
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              <Button
-                type="button"
-                size="sm"
-                className="h-8 gap-1.5 px-4"
-                onClick={handleGenerate}
-              >
-                <SparklesIcon className="size-3.5" />
-                Generate
-              </Button>
-            </div>
+          <div className="flex justify-end border-t border-border/60 bg-muted/20 px-3 py-3">
+            <Button
+              type="button"
+              size="sm"
+              className="h-8 gap-1.5 px-4"
+              onClick={handleGenerate}
+            >
+              <SparklesIcon className="size-3.5" />
+              Generate
+            </Button>
           </div>
         </div>
 
@@ -263,19 +176,6 @@ export function CreatePromptHero({
             ))}
           </div>
         ) : null}
-      </div>
-
-      <div className="mt-4 flex flex-wrap justify-center gap-2">
-        {CREATE_QUICK_SUGGESTIONS.map((item) => (
-          <button
-            key={item.label}
-            type="button"
-            onClick={() => onQuickSuggestion(item.prompt)}
-            className="rounded-full border border-border/60 bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
-          >
-            {item.label}
-          </button>
-        ))}
       </div>
     </div>
   );

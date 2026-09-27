@@ -5,6 +5,7 @@ import {
   assetNotFoundError,
   bulkDeleteWorkspaceAssetsBodySchema,
   bulkDeleteWorkspaceAssetsResponseSchema,
+  createAssetSuggestResponseSchema,
   createApiError,
   createWorkspaceAssetBodySchema,
   createWorkspaceAssetUploadBodySchema,
@@ -13,6 +14,7 @@ import {
   invalidWorkspaceMediaKeyError,
   listWorkspaceAssetsQuerySchema,
   projectNotFoundError,
+  suggestWorkspaceAssetsQuerySchema,
   unauthorizedError,
   updateWorkspaceAssetBodySchema,
   workspaceAssetListResponseSchema,
@@ -34,6 +36,7 @@ import {
   listWorkspaceAssets,
   ProjectNotFoundError,
   StorageNotConfiguredError,
+  suggestWorkspaceAssetsForCreate,
   updateWorkspaceAsset,
 } from "../services/workspace-assets.service.js";
 
@@ -75,6 +78,39 @@ export async function listWorkspaceAssetsController(
     }
     if (error instanceof AssetListCursorError) {
       return c.json(invalidAssetListCursorError, 400);
+    }
+    if (error instanceof ProjectNotFoundError) {
+      return c.json(projectNotFoundError, 404);
+    }
+    throw error;
+  }
+}
+
+export async function suggestWorkspaceAssetsController(
+  c: Context<{ Variables: AuthVariables }>,
+) {
+  const session = c.get("session");
+  if (!session) return c.json(unauthorizedError, 401);
+
+  const workspaceId = c.req.param("id");
+  if (!workspaceId) return c.json(workspaceNotFoundError, 404);
+
+  const query = suggestWorkspaceAssetsQuerySchema.parse({
+    q: c.req.query("q"),
+    projectId: c.req.query("projectId"),
+    limit: c.req.query("limit"),
+  });
+
+  try {
+    const result = await suggestWorkspaceAssetsForCreate(
+      session.user.id,
+      workspaceId,
+      query,
+    );
+    return c.json(createAssetSuggestResponseSchema.parse(result), 200);
+  } catch (error) {
+    if (error instanceof WorkspaceAccessError) {
+      return c.json(workspaceNotFoundError, 404);
     }
     if (error instanceof ProjectNotFoundError) {
       return c.json(projectNotFoundError, 404);

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { workspaceAssetDisplayNameSchema } from "../asset/asset.js";
+
 /** Default Create chat model (OpenAI). */
 export const CREATE_CHAT_MODEL_IDS = ["gpt-5.4-mini"] as const;
 
@@ -31,10 +33,9 @@ export const createReferenceAssetIdsSchema = z
   .array(z.uuid())
   .max(12, "At most 12 reference assets per message");
 
-/** Resolved @mention attachment stored on messages / sent to the API. */
 export const createAttachedAssetRefSchema = z.object({
   assetId: z.uuid(),
-  name: z.string().trim().min(1).max(120),
+  name: workspaceAssetDisplayNameSchema,
 });
 
 /**
@@ -55,4 +56,32 @@ export type CreatePresetKey = z.infer<typeof createPresetKeySchema>;
 export type CreateAttachedAssetRef = z.infer<typeof createAttachedAssetRefSchema>;
 export type CreateProjectMessageBody = z.infer<
   typeof createProjectMessageBodySchema
+>;
+
+export const createAssetSuggestScopeSchema = z.enum(["workspace", "project"]);
+
+export const suggestWorkspaceAssetsQuerySchema = z.object({
+  q: z.string().trim().max(80).optional().default(""),
+  projectId: z.uuid(),
+  limit: z.coerce.number().int().min(1).max(20).default(10),
+});
+
+export const createAssetSuggestItemSchema = z.object({
+  id: z.uuid(),
+  name: z.string(),
+  mimeType: z.string(),
+  s3Key: z.string(),
+  scope: createAssetSuggestScopeSchema,
+});
+
+export const createAssetSuggestResponseSchema = z.object({
+  items: z.array(createAssetSuggestItemSchema),
+});
+
+export type SuggestWorkspaceAssetsQuery = z.infer<
+  typeof suggestWorkspaceAssetsQuerySchema
+>;
+export type CreateAssetSuggestItem = z.infer<typeof createAssetSuggestItemSchema>;
+export type CreateAssetSuggestResponse = z.infer<
+  typeof createAssetSuggestResponseSchema
 >;

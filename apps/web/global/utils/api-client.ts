@@ -4,8 +4,37 @@ type ApiErrorBody = {
   error?: {
     code?: string;
     message?: string;
+    details?: {
+      fieldErrors?: Record<string, string[] | undefined>;
+      formErrors?: string[];
+    };
   };
 };
+
+function getApiErrorMessage(
+  body: ApiErrorBody | null,
+  fallback: string,
+): string {
+  if (!body?.error) {
+    return fallback;
+  }
+
+  if (body.error.code === "VALIDATION_ERROR" && body.error.details) {
+    const { fieldErrors, formErrors } = body.error.details;
+    for (const messages of Object.values(fieldErrors ?? {})) {
+      const first = messages?.[0];
+      if (first) {
+        return first;
+      }
+    }
+    const formFirst = formErrors?.[0];
+    if (formFirst) {
+      return formFirst;
+    }
+  }
+
+  return body.error.message ?? fallback;
+}
 
 export class ApiRequestError extends Error {
   status: number;
@@ -39,7 +68,7 @@ export async function fetchApiClient<T>(
     const body = (await response.json().catch(() => null)) as ApiErrorBody | null;
     throw new ApiRequestError(
       response.status,
-      body?.error?.message ?? response.statusText,
+      getApiErrorMessage(body, response.statusText),
       body?.error?.code,
     );
   }

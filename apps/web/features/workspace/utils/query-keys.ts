@@ -22,6 +22,13 @@ export const workspaceKeys = {
       scope,
       projectId ?? "none",
     ] as const,
+  assetSuggest: (workspaceId: string, projectId: string, q: string) =>
+    [
+      ...workspaceKeys.assets(workspaceId),
+      "suggest",
+      projectId,
+      q,
+    ] as const,
   projects: (workspaceId: string) =>
     ["workspaces", workspaceId, "projects"] as const,
   project: (workspaceId: string, projectId: string) =>

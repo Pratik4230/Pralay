@@ -15,6 +15,11 @@ import {
 } from "@repo/ui/components/field";
 import { Input } from "@repo/ui/components/input";
 
+import {
+  normalizeWorkspaceAssetDisplayName,
+  WORKSPACE_ASSET_NAME_INVALID_MESSAGE,
+} from "@repo/validators";
+
 import { WorkspaceAssetDropzone } from "@/features/workspace/components/workspace-asset-dropzone";
 import type { PendingAssetUpload } from "@/features/workspace/utils/workspace-asset-pending";
 import { revokePendingAssetUploads } from "@/features/workspace/utils/workspace-asset-pending";
@@ -73,6 +78,29 @@ export function WorkspaceAssetUploadQueue({
     onPendingChange(
       pending.map((item) => (item.id === id ? { ...item, name } : item)),
     );
+    setItemErrors((current) => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+  }
+
+  function normalizeNameField(id: string, raw: string) {
+    const normalized = normalizeWorkspaceAssetDisplayName(raw);
+    updateName(id, normalized);
+    if (!raw.trim()) {
+      setItemErrors((current) => ({
+        ...current,
+        [id]: "Name is required",
+      }));
+      return;
+    }
+    if (!normalized) {
+      setItemErrors((current) => ({
+        ...current,
+        [id]: WORKSPACE_ASSET_NAME_INVALID_MESSAGE,
+      }));
+    }
   }
 
   function removeItem(id: string) {
@@ -111,19 +139,32 @@ export function WorkspaceAssetUploadQueue({
     }
 
     for (const item of pending) {
+      const normalized = normalizeWorkspaceAssetDisplayName(item.name);
       if (!item.name.trim()) {
         const message = "Every image needs a name";
         setFieldError(message);
+        setItemErrors((current) => ({ ...current, [item.id]: message }));
         toast.error(message);
         return;
       }
-      if (item.name.trim().length > 120) {
-        const message = "Names must be at most 120 characters";
-        setFieldError(message);
-        toast.error(message);
+      if (!normalized) {
+        setFieldError(WORKSPACE_ASSET_NAME_INVALID_MESSAGE);
+        setItemErrors((current) => ({
+          ...current,
+          [item.id]: WORKSPACE_ASSET_NAME_INVALID_MESSAGE,
+        }));
+        toast.error(WORKSPACE_ASSET_NAME_INVALID_MESSAGE);
         return;
+      }
+      if (normalized !== item.name) {
+        updateName(item.id, normalized);
       }
     }
+
+    const itemsToUpload = pending.map((item) => ({
+      ...item,
+      name: normalizeWorkspaceAssetDisplayName(item.name),
+    }));
 
     const initialStatus = Object.fromEntries(
       pending.map((item) => [item.id, "queued" as const]),
@@ -133,7 +174,7 @@ export function WorkspaceAssetUploadQueue({
 
     const { succeededIds, failures } = await uploadWorkspaceAssetBatch(
       workspaceId,
-      pending.map((item) => ({
+      itemsToUpload.map((item) => ({
         id: item.id,
         file: item.file,
         name: item.name,
@@ -209,8 +250,8 @@ export function WorkspaceAssetUploadQueue({
             Ready to upload ({pending.length})
           </h3>
           <p className="text-xs text-muted-foreground">
-            Up to {WORKSPACE_ASSET_UPLOAD_CONCURRENCY} files upload at once.
-            Newest files appear at the top.
+            Names are lowercase with underscores (example: jonathan_gaming). We
+            fix spaces and capitals when you leave the name field.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -280,8 +321,13 @@ export function WorkspaceAssetUploadQueue({
                   id={`${formId}-${item.id}`}
                   value={item.name}
                   onChange={(event) => updateName(item.id, event.target.value)}
+                  onBlur={(event) =>
+                    normalizeNameField(item.id, event.target.value)
+                  }
                   disabled={isUploading}
                   maxLength={120}
+                  placeholder="jonathan_gaming"
+                  aria-invalid={Boolean(rowError)}
                 />
                 <FieldDescription className="truncate">
                   {item.file.name} · {(item.file.size / 1024).toFixed(0)} KB

@@ -5,10 +5,12 @@ import {
   apiErrorSchema,
   bulkDeleteWorkspaceAssetsBodySchema,
   bulkDeleteWorkspaceAssetsResponseSchema,
+  createAssetSuggestResponseSchema,
   createWorkspaceAssetBodySchema,
   createWorkspaceAssetUploadBodySchema,
   deleteWorkspaceAssetResponseSchema,
   listWorkspaceAssetsQuerySchema,
+  suggestWorkspaceAssetsQuerySchema,
   updateWorkspaceAssetBodySchema,
   workspaceAssetListResponseSchema,
   workspaceAssetSchema,
@@ -47,6 +49,43 @@ export const listWorkspaceAssetsRoute = createRoute({
     },
     404: {
       description: "Workspace not found",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+  },
+});
+
+export const suggestWorkspaceAssetsRoute = createRoute({
+  method: "get",
+  path: "/api/v1/workspaces/{id}/assets/suggest",
+  tags: ["Assets"],
+  summary: "Suggest assets for Create @mentions",
+  description:
+    "Prefix search on asset names for workspace library and project-specific assets. Used by the Create composer.",
+  request: {
+    params: z.object({
+      id: z.uuid(),
+    }),
+    query: suggestWorkspaceAssetsQuerySchema,
+  },
+  responses: {
+    200: {
+      description: "Matching assets",
+      content: {
+        "application/json": {
+          schema: createAssetSuggestResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Not authenticated",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+    404: {
+      description: "Workspace or project not found",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+    422: {
+      description: "Validation error",
       content: { "application/json": { schema: apiErrorSchema } },
     },
   },
