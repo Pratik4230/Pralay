@@ -1,0 +1,8 @@
+{
+  "name": "inngest-dev",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "inngest dev -u http://localhost:3001/api/inngest"
+  }
+}

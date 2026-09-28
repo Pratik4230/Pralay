@@ -1,6 +1,7 @@
 export { storageEnv, isStorageConfigured } from "./env.js";
 export {
   buildProjectCoverKey,
+  buildGeneratedAssetKey,
   buildWorkspaceAssetKey,
   buildWorkspaceAvatarKey,
   buildWorkspaceCoverKey,
@@ -24,4 +25,5 @@ export {
   createPresignedUploadUrl,
   getMediaUrl,
   getS3Client,
+  putObjectBuffer,
 } from "./presign.js";

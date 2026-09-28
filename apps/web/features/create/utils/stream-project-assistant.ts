@@ -1,6 +1,6 @@
 import {
   assistantMessageStreamEventSchema,
-  type SendProjectAssistantMessageBody,
+  type SendProjectAssistantMessageBodyInput,
 } from "@repo/validators";
 
 import { env } from "@/global/utils/env";
@@ -17,13 +17,17 @@ export type StreamProjectAssistantHandlers = {
     { type: "done" }
   >) => void;
   onError: (message: string) => void;
+  onGeneration?: (event: Extract<
+    ReturnType<typeof assistantMessageStreamEventSchema.parse>,
+    { type: "generation" }
+  >) => void;
   signal?: AbortSignal;
 };
 
 export async function streamProjectAssistantMessage(
   workspaceId: string,
   projectId: string,
-  body: SendProjectAssistantMessageBody,
+  body: SendProjectAssistantMessageBodyInput,
   handlers: StreamProjectAssistantHandlers,
 ) {
   const response = await fetch(
@@ -74,6 +78,9 @@ export async function streamProjectAssistantMessage(
       switch (parsed.data.type) {
         case "meta":
           handlers.onMeta(parsed.data);
+          break;
+        case "generation":
+          handlers.onGeneration?.(parsed.data);
           break;
         case "text":
           fullText += parsed.data.delta;

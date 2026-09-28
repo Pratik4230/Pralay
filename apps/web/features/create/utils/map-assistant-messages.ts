@@ -47,20 +47,33 @@ export function mapAssistantMessageToCreateMessage(
 ): CreateThreadMessage | null {
   if (message.role === "system") return null;
 
+  const attachments =
+    message.role === "user"
+      ? mapReferenceAssets(
+          queryClient,
+          workspaceId,
+          message.referenceAssetIds,
+          fallbackById,
+        )
+      : undefined;
+
+  const generation =
+    message.generationId && message.role === "user"
+      ? {
+          id: message.generationId,
+          status: "queued" as const,
+          prompt: message.content,
+          referenceNames: attachments?.map((asset) => asset.name) ?? [],
+        }
+      : undefined;
+
   return {
     id: message.id,
     role: message.role,
     content: message.content,
     createdAt: message.createdAt,
-    attachments:
-      message.role === "user"
-        ? mapReferenceAssets(
-            queryClient,
-            workspaceId,
-            message.referenceAssetIds,
-            fallbackById,
-          )
-        : undefined,
+    attachments,
+    generation,
   };
 }
 

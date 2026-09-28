@@ -49,6 +49,8 @@ export const createProjectMessageBodySchema = z.object({
   chatModelId: createChatModelIdSchema.default("gpt-5.4-mini"),
   presetKey: createPresetKeySchema.optional(),
   aspectRatio: createAspectRatioSchema.optional(),
+  /** When true, enqueue Grok Imagine on send without waiting for the agent tool. Default false: use start_generation. */
+  enqueueGeneration: z.boolean().default(false),
 });
 
 export type CreateChatModelId = z.infer<typeof createChatModelIdSchema>;

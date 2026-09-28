@@ -3,9 +3,17 @@ import {
   runCreateChatTurn,
   streamCreateChatTurn,
   type CreateChatHistoryMessage,
+  type CreateChatRunContext,
 } from "@repo/agents";
 import { hasOpenAiApiKey } from "@repo/env";
-import type { CreateChatModelId } from "@repo/validators";
+import type {
+  CreateChatModelId,
+  SendProjectAssistantMessageBody,
+} from "@repo/validators";
+
+import { createCreateChatToolHandlers } from "./create-assistant-tool-handlers.service.js";
+import type { MessageRow } from "./project-assistant.service.js";
+import { mapMessage } from "./project-assistant.service.js";
 
 const PLACEHOLDER_NO_OPENAI =
   "Thanks for your message. Add OPENAI_API_KEY to enable Create chat replies.";
@@ -13,39 +21,59 @@ const PLACEHOLDER_NO_OPENAI =
 const MODEL_ERROR_REPLY =
   "I could not generate a reply right now. Please try again in a moment.";
 
-export async function generateCreateAssistantReply(input: {
+export type CreateAssistantChatContext = {
+  actorUserId: string;
+  workspaceId: string;
+  projectId: string;
+  body: SendProjectAssistantMessageBody;
+  getUserMessageRow: () => MessageRow;
+  setUserMessageRow: (row: MessageRow) => void;
+  onGenerationLinked?: (userMessage: ReturnType<typeof mapMessage>) => void;
+};
+
+function buildRunContext(
+  chatContext: CreateAssistantChatContext,
+): CreateChatRunContext {
+  return {
+    toolHandlers: createCreateChatToolHandlers(chatContext),
+  };
+}
+
+type ChatTurnInput = {
   chatModelId: CreateChatModelId;
   threadSummary: string | null;
   history: CreateChatHistoryMessage[];
   userPrompt: string;
   referenceAssetIds: string[];
-}): Promise<string> {
+};
+
+export async function generateCreateAssistantReply(
+  input: ChatTurnInput,
+  chatContext: CreateAssistantChatContext,
+): Promise<string> {
   if (!hasOpenAiApiKey()) {
     return PLACEHOLDER_NO_OPENAI;
   }
 
   try {
-    return await runCreateChatTurn(input);
+    return await runCreateChatTurn(input, buildRunContext(chatContext));
   } catch (error) {
     console.error("[create-assistant] chat turn failed", error);
     return MODEL_ERROR_REPLY;
   }
 }
 
-export async function* streamCreateAssistantReply(input: {
-  chatModelId: CreateChatModelId;
-  threadSummary: string | null;
-  history: CreateChatHistoryMessage[];
-  userPrompt: string;
-  referenceAssetIds: string[];
-}): AsyncGenerator<string> {
+export async function* streamCreateAssistantReply(
+  input: ChatTurnInput,
+  chatContext: CreateAssistantChatContext,
+): AsyncGenerator<string> {
   if (!hasOpenAiApiKey()) {
     yield PLACEHOLDER_NO_OPENAI;
     return;
   }
 
   try {
-    yield* streamCreateChatTurn(input);
+    yield* streamCreateChatTurn(input, buildRunContext(chatContext));
   } catch (error) {
     console.error("[create-assistant] chat stream failed", error);
     yield MODEL_ERROR_REPLY;

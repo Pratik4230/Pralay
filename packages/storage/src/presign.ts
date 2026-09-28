@@ -57,6 +57,28 @@ export async function createPresignedDownloadUrl(input: {
   return getSignedUrl(getS3Client(), command, { expiresIn });
 }
 
+export async function putObjectBuffer(input: {
+  key: string;
+  contentType: string;
+  body: Uint8Array | Buffer;
+}) {
+  const bucket = storageEnv.bucket;
+  if (!bucket) {
+    throw new Error("S3_BUCKET is not configured");
+  }
+
+  await getS3Client().send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: input.key,
+      ContentType: input.contentType,
+      Body: input.body,
+    }),
+  );
+
+  return { bucket, key: input.key };
+}
+
 export function getMediaUrl(key: string) {
   if (storageEnv.mediaCdnUrl) {
     return `${storageEnv.mediaCdnUrl.replace(/\/$/, "")}/${key}`;

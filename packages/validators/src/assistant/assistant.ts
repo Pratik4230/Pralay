@@ -86,6 +86,10 @@ export type AssistantMessage = z.infer<typeof assistantMessageSchema>;
 export type ListProjectAssistantMessagesQuery = z.infer<
   typeof listProjectAssistantMessagesQuerySchema
 >;
+export type SendProjectAssistantMessageBodyInput = z.input<
+  typeof sendProjectAssistantMessageBodySchema
+>;
+
 export type SendProjectAssistantMessageBody = z.infer<
   typeof sendProjectAssistantMessageBodySchema
 >;
@@ -115,8 +119,14 @@ export const assistantMessageStreamErrorEventSchema = z.object({
   message: z.string(),
 });
 
+export const assistantMessageStreamGenerationEventSchema = z.object({
+  type: z.literal("generation"),
+  userMessage: assistantMessageSchema,
+});
+
 export const assistantMessageStreamEventSchema = z.discriminatedUnion("type", [
   assistantMessageStreamMetaEventSchema,
+  assistantMessageStreamGenerationEventSchema,
   assistantMessageStreamTextEventSchema,
   assistantMessageStreamDoneEventSchema,
   assistantMessageStreamErrorEventSchema,

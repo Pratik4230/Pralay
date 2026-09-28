@@ -2,14 +2,18 @@ import {
   AIMessage,
   HumanMessage,
   SystemMessage,
+  ToolMessage,
   type BaseMessage,
 } from "@langchain/core/messages";
-import { END, MessagesAnnotation, START, StateGraph } from "@langchain/langgraph";
 import { ChatOpenAI } from "@langchain/openai";
 
 import { getOpenAiApiKey } from "@repo/env";
 import type { CreateChatModelId } from "@repo/validators";
 
+import {
+  createCreateChatTools,
+  type CreateChatToolHandlers,
+} from "./create-chat-tools.js";
 import { CREATE_SYSTEM_PROMPT } from "./prompts.js";
 
 export type CreateChatHistoryMessage = {
@@ -24,6 +28,12 @@ export type RunCreateChatTurnInput = {
   userPrompt: string;
   referenceAssetIds: string[];
 };
+
+export type CreateChatRunContext = {
+  toolHandlers: CreateChatToolHandlers;
+};
+
+const MAX_TOOL_ITERATIONS = 8;
 
 function buildSystemContent(
   threadSummary: string | null,
@@ -64,9 +74,7 @@ function toLangChainMessages(input: RunCreateChatTurnInput): BaseMessage[] {
   return messages;
 }
 
-function extractMessageText(
-  content: AIMessage["content"] | string | unknown,
-): string {
+function extractMessageText(content: AIMessage["content"] | string | unknown): string {
   if (typeof content === "string") {
     return content;
   }
@@ -78,56 +86,87 @@ function extractMessageText(
   return "";
 }
 
-export async function* streamCreateChatTurn(
-  input: RunCreateChatTurnInput,
-): AsyncGenerator<string> {
-  const model = new ChatOpenAI({
-    apiKey: getOpenAiApiKey(),
-    model: input.chatModelId,
-    streaming: true,
-  });
-
-  const stream = await model.stream(toLangChainMessages(input));
-
-  for await (const chunk of stream) {
-    const delta = extractMessageText(chunk.content);
-    if (delta) {
-      yield delta;
-    }
-  }
-}
-
 export async function runCreateChatTurn(
   input: RunCreateChatTurnInput,
+  context: CreateChatRunContext,
 ): Promise<string> {
   const model = new ChatOpenAI({
     apiKey: getOpenAiApiKey(),
     model: input.chatModelId,
   });
 
-  const initialMessages = toLangChainMessages(input);
+  const tools = createCreateChatTools(context.toolHandlers);
+  const modelWithTools = model.bindTools(tools);
 
-  const graph = new StateGraph(MessagesAnnotation)
-    .addNode("model", async (state) => {
-      const response = await model.invoke(state.messages);
-      return { messages: [response] };
-    })
-    .addEdge(START, "model")
-    .addEdge("model", END)
-    .compile();
+  let messages: BaseMessage[] = toLangChainMessages(input);
 
-  const result = await graph.invoke({ messages: initialMessages });
-  const last = result.messages[result.messages.length - 1];
+  for (let step = 0; step < MAX_TOOL_ITERATIONS; step += 1) {
+    const response = await modelWithTools.invoke(messages);
+    const toolCalls = response.tool_calls ?? [];
 
-  if (!last) {
-    throw new Error("Create chat graph returned no assistant message");
+    if (toolCalls.length === 0) {
+      const content = extractMessageText(response.content).trim();
+      if (!content) {
+        throw new Error("Create chat model returned empty content");
+      }
+      return content;
+    }
+
+    messages = [...messages, response];
+
+    for (const call of toolCalls) {
+      const toolCallId = call.id ?? `${call.name}-${step}`;
+      let output: string;
+
+      try {
+        if (call.name === "start_generation") {
+          const aspectRatio =
+            typeof call.args?.aspectRatio === "string"
+              ? call.args.aspectRatio
+              : undefined;
+          output = JSON.stringify(
+            await context.toolHandlers.startGeneration({ aspectRatio }),
+          );
+        } else if (call.name === "get_generation_status") {
+          output = JSON.stringify(
+            await context.toolHandlers.getGenerationStatus({
+              generationId: String(call.args?.generationId ?? ""),
+            }),
+          );
+        } else {
+          messages.push(
+            new ToolMessage({
+              tool_call_id: toolCallId,
+              content: JSON.stringify({ error: `Unknown tool: ${call.name}` }),
+            }),
+          );
+          continue;
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Tool execution failed";
+        output = JSON.stringify({ error: message });
+      }
+
+      messages.push(
+        new ToolMessage({
+          tool_call_id: toolCallId,
+          content: output,
+        }),
+      );
+    }
   }
 
-  const content = extractMessageText(last.content).trim();
+  throw new Error("Create chat exceeded maximum tool iterations");
+}
 
-  if (!content.trim()) {
-    throw new Error("Create chat model returned empty content");
+export async function* streamCreateChatTurn(
+  input: RunCreateChatTurnInput,
+  context: CreateChatRunContext,
+): AsyncGenerator<string> {
+  const text = await runCreateChatTurn(input, context);
+  const chunkSize = 32;
+  for (let index = 0; index < text.length; index += chunkSize) {
+    yield text.slice(index, index + chunkSize);
   }
-
-  return content.trim();
 }

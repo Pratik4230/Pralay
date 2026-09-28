@@ -12,11 +12,21 @@ import { getMediaUrl } from "@/global/utils/media-url";
 type CreateChatPanelProps = {
   messages: CreateThreadMessage[];
   projectName: string;
+  workspaceId?: string;
+  projectId?: string;
   compact?: boolean;
   className?: string;
 };
 
-function MessageBubble({ message }: { message: CreateThreadMessage }) {
+function MessageBubble({
+  message,
+  workspaceId,
+  projectId,
+}: {
+  message: CreateThreadMessage;
+  workspaceId?: string;
+  projectId?: string;
+}) {
   const isUser = message.role === "user";
 
   return (
@@ -85,8 +95,12 @@ function MessageBubble({ message }: { message: CreateThreadMessage }) {
           </div>
         ) : null}
 
-        {message.generation ? (
-          <CreateGenerationCard generation={message.generation} />
+        {message.generation && workspaceId && projectId ? (
+          <CreateGenerationCard
+            workspaceId={workspaceId}
+            projectId={projectId}
+            generation={message.generation}
+          />
         ) : null}
       </div>
     </div>
@@ -96,6 +110,8 @@ function MessageBubble({ message }: { message: CreateThreadMessage }) {
 export function CreateChatPanel({
   messages,
   projectName,
+  workspaceId,
+  projectId,
   compact = false,
   className,
 }: CreateChatPanelProps) {
@@ -113,7 +129,12 @@ export function CreateChatPanel({
 
       <div className="flex flex-col gap-6 pb-6">
         {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} />
+          <MessageBubble
+            key={message.id}
+            message={message}
+            workspaceId={workspaceId}
+            projectId={projectId}
+          />
         ))}
       </div>
     </div>

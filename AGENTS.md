@@ -248,9 +248,11 @@ packages/ai (providers) · packages/agents (LangGraph graphs + tools) — planne
 
 ```bash
 docker compose -f infra/ec2/docker-compose.yml up
-bun run dev
+bun run dev          # web + api + Inngest dev server (apps/inngest)
 bun run db:migrate
 ```
+
+Inngest Dev Server UI: `http://localhost:8288`. The worker syncs to `http://localhost:3001/api/inngest`. Set `INNGEST_DEV=1` in `.env`. Root `inngest-cli` needs its postinstall (listed in `trustedDependencies` in root `package.json`); if the CLI binary is missing, run `bun pm trust inngest-cli && bun install`.
 
 See `.env.example`. Required for AI slice: `DATABASE_URL`, S3, `OPENAI_API_KEY`, `XAI_API_KEY`, Inngest keys when worker exists.
 

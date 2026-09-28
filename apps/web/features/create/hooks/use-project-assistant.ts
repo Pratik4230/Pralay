@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import type { SendProjectAssistantMessageBody } from "@repo/validators";
+import type { SendProjectAssistantMessageBodyInput } from "@repo/validators";
 
 import { createKeys } from "@/features/create/utils/query-keys";
 import {
@@ -46,7 +46,7 @@ export function useSendProjectAssistantMessage(
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (body: SendProjectAssistantMessageBody) =>
+    mutationFn: (body: SendProjectAssistantMessageBodyInput) =>
       sendProjectAssistantMessage(workspaceId, projectId, body),
     onSuccess: (data) => {
       void queryClient.invalidateQueries({

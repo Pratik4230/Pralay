@@ -8,7 +8,8 @@ export type CreateGenerationUiStatus =
   | "queued"
   | "processing"
   | "completed"
-  | "failed";
+  | "failed"
+  | "cancelled";
 
 export type CreateMessageRole = "user" | "assistant";
 
@@ -24,6 +25,13 @@ export type CreateGenerationBlock = {
   status: CreateGenerationUiStatus;
   prompt: string;
   referenceNames: string[];
+  errorMessage?: string | null;
+  outputAssets?: Array<{
+    id: string;
+    name: string;
+    s3Key: string;
+    mimeType: string;
+  }>;
 };
 
 export type CreateThreadMessage = {

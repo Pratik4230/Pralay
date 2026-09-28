@@ -106,6 +106,18 @@ export function buildWorkspaceAssetKey(
   return `uploads/workspaces/${workspaceId}/assets/${base}-${uniqueSuffix}.${extension}`;
 }
 
+/** Server-side output from async image generation (Inngest worker). */
+export function buildGeneratedAssetKey(
+  workspaceId: string,
+  generationId: string,
+  contentType: string,
+) {
+  const extension = getAssetExtension(contentType);
+  const uniqueSuffix = randomUUID().slice(0, 8);
+  const generationPrefix = generationId.slice(0, 8);
+  return `uploads/workspaces/${workspaceId}/generated/${generationPrefix}-${uniqueSuffix}.${extension}`;
+}
+
 export function parseWorkspaceIdFromAssetKey(key: string) {
   const match = /^uploads\/workspaces\/([^/]+)\/assets\/.+$/.exec(key);
   return match?.[1] ?? null;

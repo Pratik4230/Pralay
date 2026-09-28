@@ -20,9 +20,11 @@ import {
 } from "./assistant-message-list-cursor.js";
 import { loadCreateChatHistory } from "./create-chat-context.js";
 import { completeAssistantTurn } from "./create-assistant-stream.service.js";
+import { generateCreateAssistantReply } from "./create-assistant-ai.service.js";
 import {
-  generateCreateAssistantReply,
-} from "./create-assistant-ai.service.js";
+  attachGenerationToAssistantUserMessage,
+  StorageNotConfiguredError,
+} from "../../generations/services/project-generations.service.js";
 
 export class AssistantThreadNotFoundError extends Error {
   constructor(message = "Thread not found") {
@@ -275,36 +277,72 @@ export async function sendProjectAssistantMessage(
   projectId: string,
   input: SendProjectAssistantMessageBody,
 ) {
-  const { threadRow, userMessageRow } = await persistProjectAssistantUserMessage(
-    actorUserId,
-    workspaceId,
-    projectId,
-    input,
-  );
+  const { threadRow, userMessageRow: persistedUserMessage } =
+    await persistProjectAssistantUserMessage(
+      actorUserId,
+      workspaceId,
+      projectId,
+      input,
+    );
+
+  let userMessageRow = persistedUserMessage;
+
+  if (input.enqueueGeneration) {
+    try {
+      const linked = await attachGenerationToAssistantUserMessage({
+        actorUserId,
+        workspaceId,
+        projectId,
+        messageId: userMessageRow.id,
+        prompt: input.prompt,
+        inputAssetIds: input.referenceAssetIds,
+        aspectRatio: input.aspectRatio,
+      });
+      userMessageRow = linked.userMessageRow;
+    } catch (error) {
+      if (!(error instanceof StorageNotConfiguredError)) {
+        throw error;
+      }
+    }
+  }
 
   const history = await loadCreateChatHistory(threadRow.id, {
     id: userMessageRow.id,
     createdAt: userMessageRow.createdAt,
   });
 
-  const assistantContent = await generateCreateAssistantReply({
-    chatModelId: input.chatModelId,
-    threadSummary: threadRow.summary,
-    history,
-    userPrompt: input.prompt,
-    referenceAssetIds: input.referenceAssetIds,
-  });
+  const userMessageRef = { row: userMessageRow };
+
+  const assistantContent = await generateCreateAssistantReply(
+    {
+      chatModelId: input.chatModelId,
+      threadSummary: threadRow.summary,
+      history,
+      userPrompt: input.prompt,
+      referenceAssetIds: input.referenceAssetIds,
+    },
+    {
+      actorUserId,
+      workspaceId,
+      projectId,
+      body: input,
+      getUserMessageRow: () => userMessageRef.row,
+      setUserMessageRow: (row) => {
+        userMessageRef.row = row;
+      },
+    },
+  );
 
   const completed = await completeAssistantTurn({
     threadRow,
-    userMessageRow,
+    userMessageRow: userMessageRef.row,
     prompt: input.prompt,
     assistantContent,
   });
 
   return {
     thread: completed.thread,
-    userMessage: mapMessage(userMessageRow),
+    userMessage: mapMessage(userMessageRef.row),
     assistantMessage: completed.assistantMessage,
   };
 }

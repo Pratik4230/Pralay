@@ -12,6 +12,7 @@ import type { AssistantMessage } from "@repo/validators";
 
 import { createPralayWorkspaceAttachmentAdapter } from "@/features/create/adapters/pralay-workspace-attachment-adapter";
 import { CreateComposerSessionRestore } from "@/features/create/components/create-composer-session-restore";
+import { CreateGenerationsProvider } from "@/features/create/components/create-generations-context";
 import { useProjectAssistantMessages } from "@/features/create/hooks/use-project-assistant";
 import { useCreateProjectStore } from "@/features/create/store/create-project-store";
 import { convertCreateThreadMessage } from "@/features/create/utils/convert-create-thread-message";
@@ -123,6 +124,19 @@ export function CreateProjectRuntimeProvider({
     workspaceId,
   ]);
 
+  const generationsByMessageId = useMemo(() => {
+    const map = new Map<
+      string,
+      NonNullable<CreateThreadMessage["generation"]>
+    >();
+    for (const message of messages) {
+      if (message.generation) {
+        map.set(message.id, message.generation);
+      }
+    }
+    return map;
+  }, [messages]);
+
   const attachmentAdapter = useMemo(
     () => createPralayWorkspaceAttachmentAdapter(workspaceId, projectId),
     [workspaceId, projectId],
@@ -172,6 +186,13 @@ export function CreateProjectRuntimeProvider({
                 assistantContent: "",
                 libraryAssets,
               });
+            },
+            onGeneration: (event) => {
+              setStreamState((current) =>
+                current
+                  ? { ...current, userMessage: event.userMessage }
+                  : current,
+              );
             },
             onTextDelta: (_delta, fullText) => {
               setStreamState((current) =>
@@ -231,12 +252,18 @@ export function CreateProjectRuntimeProvider({
   });
 
   return (
-    <AssistantRuntimeProvider runtime={runtime}>
-      <CreateComposerSessionRestore
-        workspaceId={workspaceId}
-        projectId={projectId}
-      />
-      {children}
-    </AssistantRuntimeProvider>
+    <CreateGenerationsProvider
+      workspaceId={workspaceId}
+      projectId={projectId}
+      byMessageId={generationsByMessageId}
+    >
+      <AssistantRuntimeProvider runtime={runtime}>
+        <CreateComposerSessionRestore
+          workspaceId={workspaceId}
+          projectId={projectId}
+        />
+        {children}
+      </AssistantRuntimeProvider>
+    </CreateGenerationsProvider>
   );
 }

@@ -6,6 +6,7 @@ import { createCreateProjectComposer } from "@/features/create/components/create
 import { CreateProjectRuntimeProvider } from "@/features/create/components/create-project-runtime-provider";
 import { CreateThreadWelcome } from "@/features/create/components/create-thread-welcome";
 import { CreateThreadSelector } from "@/features/create/components/create-thread-selector";
+import { CreateUserMessage } from "@/features/create/components/create-user-message";
 import { useProjectCreateUi } from "@/features/create/hooks/use-project-create-ui";
 import { useInfiniteWorkspaceAssets } from "@/features/workspace/hooks/use-workspace-assets";
 import { useWorkspaceProject } from "@/features/workspace/hooks/use-workspace-projects";
@@ -36,6 +37,7 @@ export function ProjectCreatePage({
     () => ({
       Welcome: CreateThreadWelcome,
       Composer: createCreateProjectComposer(workspaceId, projectId),
+      UserMessage: CreateUserMessage,
     }),
     [workspaceId, projectId],
   );

@@ -1,7 +1,7 @@
 import type {
   AssistantMessage,
   AssistantThread,
-  SendProjectAssistantMessageBody,
+  SendProjectAssistantMessageBodyInput,
 } from "@repo/validators";
 import {
   listProjectAssistantMessagesResponseSchema,
@@ -39,7 +39,7 @@ export function fetchProjectAssistantMessages(
 export function sendProjectAssistantMessage(
   workspaceId: string,
   projectId: string,
-  body: SendProjectAssistantMessageBody,
+  body: SendProjectAssistantMessageBodyInput,
 ) {
   return fetchApiClient(
     `/api/v1/workspaces/${workspaceId}/projects/${projectId}/assistant/messages`,
@@ -67,5 +67,5 @@ export function createProjectAssistantThread(
 export type {
   AssistantMessage,
   AssistantThread,
-  SendProjectAssistantMessageBody,
+  SendProjectAssistantMessageBodyInput,
 };

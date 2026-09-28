@@ -1,6 +1,7 @@
 import { registerAuthHandler, registerAuthRoutes } from "./features/auth/index.js";
 import { registerAssetsFeature } from "./features/assets/index.js";
 import { registerAssistantFeature } from "./features/assistant/index.js";
+import { registerGenerationsFeature } from "./features/generations/index.js";
 import { registerInngestFeature } from "./features/inngest/index.js";
 import { registerMediaFeature } from "./features/media/index.js";
 import { registerProjectsFeature } from "./features/projects/index.js";
@@ -23,6 +24,7 @@ registerAuthRoutes(app);
 registerWorkspaceFeature(app);
 registerProjectsFeature(app);
 registerAssistantFeature(app);
+registerGenerationsFeature(app);
 registerAssetsFeature(app);
 registerMediaFeature(app);
 registerTrashFeature(app);
