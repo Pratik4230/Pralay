@@ -92,3 +92,32 @@ export type SendProjectAssistantMessageBody = z.infer<
 export type CreateProjectAssistantThreadBody = z.infer<
   typeof createProjectAssistantThreadBodySchema
 >;
+
+export const assistantMessageStreamMetaEventSchema = z.object({
+  type: z.literal("meta"),
+  thread: assistantThreadSchema,
+  userMessage: assistantMessageSchema,
+});
+
+export const assistantMessageStreamTextEventSchema = z.object({
+  type: z.literal("text"),
+  delta: z.string(),
+});
+
+export const assistantMessageStreamDoneEventSchema = z.object({
+  type: z.literal("done"),
+  thread: assistantThreadSchema,
+  assistantMessage: assistantMessageSchema,
+});
+
+export const assistantMessageStreamErrorEventSchema = z.object({
+  type: z.literal("error"),
+  message: z.string(),
+});
+
+export const assistantMessageStreamEventSchema = z.discriminatedUnion("type", [
+  assistantMessageStreamMetaEventSchema,
+  assistantMessageStreamTextEventSchema,
+  assistantMessageStreamDoneEventSchema,
+  assistantMessageStreamErrorEventSchema,
+]);

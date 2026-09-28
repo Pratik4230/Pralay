@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AssistantRuntimeProvider,
   useExternalStoreRuntime,
@@ -8,21 +8,31 @@ import {
 } from "@assistant-ui/react";
 import { useQueryClient } from "@tanstack/react-query";
 
+import type { AssistantMessage } from "@repo/validators";
+
 import { createPralayWorkspaceAttachmentAdapter } from "@/features/create/adapters/pralay-workspace-attachment-adapter";
 import { CreateComposerSessionRestore } from "@/features/create/components/create-composer-session-restore";
-import {
-  useProjectAssistantMessages,
-  useSendProjectAssistantMessage,
-} from "@/features/create/hooks/use-project-assistant";
+import { useProjectAssistantMessages } from "@/features/create/hooks/use-project-assistant";
 import { useCreateProjectStore } from "@/features/create/store/create-project-store";
 import { convertCreateThreadMessage } from "@/features/create/utils/convert-create-thread-message";
+import type { CreateAttachedAsset, CreateThreadMessage } from "@/features/create/types/create-ui";
 import { mapAssistantMessagesToCreateMessages } from "@/features/create/utils/map-assistant-messages";
 import { mergeCreateSendAttachments } from "@/features/create/utils/merge-create-send-attachments";
+import { createKeys } from "@/features/create/utils/query-keys";
+import { streamProjectAssistantMessage } from "@/features/create/utils/stream-project-assistant";
 
 type CreateProjectRuntimeProviderProps = {
   workspaceId: string;
   projectId: string;
   children: ReactNode;
+};
+
+type ActiveStreamState = {
+  threadId: string;
+  userMessage: AssistantMessage;
+  assistantMessageId: string;
+  assistantContent: string;
+  libraryAssets: CreateAttachedAsset[];
 };
 
 function extractUserText(message: AppendMessage): string {
@@ -39,6 +49,11 @@ export function CreateProjectRuntimeProvider({
   children,
 }: CreateProjectRuntimeProviderProps) {
   const queryClient = useQueryClient();
+  const abortRef = useRef<AbortController | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const [streamState, setStreamState] = useState<ActiveStreamState | null>(
+    null,
+  );
 
   useEffect(() => {
     useCreateProjectStore.getState().ensureProject(projectId);
@@ -54,16 +69,59 @@ export function CreateProjectRuntimeProvider({
     activeThreadId,
   );
 
-  const sendMutation = useSendProjectAssistantMessage(workspaceId, projectId);
+  const messages = useMemo((): CreateThreadMessage[] => {
+    const fallbackById = streamState
+      ? new Map(streamState.libraryAssets.map((asset) => [asset.id, asset]))
+      : undefined;
 
-  const messages = useMemo(() => {
+    if (
+      streamState &&
+      activeThreadId === streamState.threadId &&
+      messagesQuery.data
+    ) {
+      const prior = messagesQuery.data.messages.filter(
+        (message) => message.id !== streamState.userMessage.id,
+      );
+      const mappedPrior = mapAssistantMessagesToCreateMessages(
+        queryClient,
+        workspaceId,
+        prior,
+        fallbackById,
+      );
+      const user = mapAssistantMessagesToCreateMessages(
+        queryClient,
+        workspaceId,
+        [streamState.userMessage],
+        fallbackById,
+      )[0];
+      const streamingAssistant: CreateThreadMessage = {
+        id: streamState.assistantMessageId,
+        role: "assistant",
+        content: streamState.assistantContent,
+        createdAt: new Date().toISOString(),
+      };
+      return [
+        ...mappedPrior,
+        ...(user ? [user] : []),
+        streamingAssistant,
+      ];
+    }
+
     if (!activeThreadId || !messagesQuery.data) return [];
+
     return mapAssistantMessagesToCreateMessages(
       queryClient,
       workspaceId,
       messagesQuery.data.messages,
+      fallbackById,
     );
-  }, [activeThreadId, messagesQuery.data, queryClient, workspaceId]);
+  }, [
+    activeThreadId,
+    messagesQuery.data,
+    queryClient,
+    streamState,
+    workspaceId,
+  ]);
 
   const attachmentAdapter = useMemo(
     () => createPralayWorkspaceAttachmentAdapter(workspaceId, projectId),
@@ -86,33 +144,87 @@ export function CreateProjectRuntimeProvider({
 
       const slice = useCreateProjectStore.getState().byProject[projectId];
 
-      try {
-        const result = await sendMutation.mutateAsync({
-          threadId: slice?.activeThreadId ?? undefined,
-          prompt,
-          referenceAssetIds: libraryAssets.map((asset) => asset.id),
-          chatModelId: slice?.session.chatModelId ?? "gpt-5.4-mini",
-        });
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+      setIsRunning(true);
 
-        useCreateProjectStore
-          .getState()
-          .setActiveThreadId(projectId, result.thread.id);
+      try {
+        await streamProjectAssistantMessage(
+          workspaceId,
+          projectId,
+          {
+            threadId: slice?.activeThreadId ?? undefined,
+            prompt,
+            referenceAssetIds: libraryAssets.map((asset) => asset.id),
+            chatModelId: slice?.session.chatModelId ?? "gpt-5.4-mini",
+          },
+          {
+            signal: controller.signal,
+            onMeta: (event) => {
+              useCreateProjectStore
+                .getState()
+                .setActiveThreadId(projectId, event.thread.id);
+              setStreamState({
+                threadId: event.thread.id,
+                userMessage: event.userMessage,
+                assistantMessageId: `stream-${event.userMessage.id}`,
+                assistantContent: "",
+                libraryAssets,
+              });
+            },
+            onTextDelta: (_delta, fullText) => {
+              setStreamState((current) =>
+                current
+                  ? { ...current, assistantContent: fullText }
+                  : current,
+              );
+            },
+            onDone: (event) => {
+              setStreamState(null);
+              void queryClient.invalidateQueries({
+                queryKey: createKeys.assistantThreads(workspaceId, projectId),
+              });
+              void queryClient.invalidateQueries({
+                queryKey: createKeys.assistantMessages(
+                  workspaceId,
+                  projectId,
+                  event.thread.id,
+                ),
+              });
+            },
+            onError: () => {
+              setStreamState(null);
+            },
+          },
+        );
+
         useCreateProjectStore.getState().clearStagedAssets(projectId);
         useCreateProjectStore.getState().setDraft(projectId, "");
-      } catch {
-        // Mutation error; add toast when Create surfaces send failures.
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          setStreamState(null);
+        }
+      } finally {
+        setIsRunning(false);
       }
     },
-    [projectId, sendMutation],
+    [projectId, queryClient, workspaceId],
   );
 
-  const isRunning = sendMutation.isPending;
+  const onCancel = useCallback(async () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setIsRunning(false);
+    setStreamState(null);
+  }, []);
 
   const runtime = useExternalStoreRuntime({
     isRunning,
     messages,
     convertMessage: convertCreateThreadMessage,
     onNew,
+    onCancel,
     adapters: {
       attachments: attachmentAdapter,
     },

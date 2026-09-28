@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, lt, or } from "drizzle-orm";
+import { and, desc, eq, lt, or } from "drizzle-orm";
 
 import { db } from "@repo/db";
 import { assistantMessages, assistantThreads } from "@repo/db/schema";
@@ -18,9 +18,11 @@ import {
   decodeAssistantMessageListCursor,
   encodeAssistantMessageListCursor,
 } from "./assistant-message-list-cursor.js";
-
-const PLACEHOLDER_ASSISTANT_REPLY =
-  "Thanks for your message. The Create assistant is not connected yet, but your prompt was saved.";
+import { loadCreateChatHistory } from "./create-chat-context.js";
+import { completeAssistantTurn } from "./create-assistant-stream.service.js";
+import {
+  generateCreateAssistantReply,
+} from "./create-assistant-ai.service.js";
 
 export class AssistantThreadNotFoundError extends Error {
   constructor(message = "Thread not found") {
@@ -32,7 +34,9 @@ export class AssistantThreadNotFoundError extends Error {
 type ThreadRow = typeof assistantThreads.$inferSelect;
 type MessageRow = typeof assistantMessages.$inferSelect;
 
-function mapThread(row: ThreadRow) {
+export type { ThreadRow, MessageRow };
+
+export function mapThread(row: ThreadRow) {
   return {
     id: row.id,
     workspaceId: row.workspaceId,
@@ -47,7 +51,7 @@ function mapThread(row: ThreadRow) {
   };
 }
 
-function mapMessage(row: MessageRow) {
+export function mapMessage(row: MessageRow) {
   return {
     id: row.id,
     threadId: row.threadId,
@@ -199,7 +203,7 @@ export async function listProjectAssistantMessages(
   };
 }
 
-export async function sendProjectAssistantMessage(
+export async function persistProjectAssistantUserMessage(
   actorUserId: string,
   workspaceId: string,
   projectId: string,
@@ -261,33 +265,48 @@ export async function sendProjectAssistantMessage(
       throw new Error("Failed to save user message");
     }
 
-    const [assistantMessageRow] = await tx
-      .insert(assistantMessages)
-      .values({
-        threadId: threadRow.id,
-        role: "assistant",
-        content: PLACEHOLDER_ASSISTANT_REPLY,
-        referenceAssetIds: [],
-      })
-      .returning();
-
-    if (!assistantMessageRow) {
-      throw new Error("Failed to save assistant message");
-    }
-
-    const now = new Date();
-    const [updatedThread] = await tx
-      .update(assistantThreads)
-      .set({ updatedAt: now })
-      .where(eq(assistantThreads.id, threadRow.id))
-      .returning();
-
-    return {
-      thread: mapThread(updatedThread ?? { ...threadRow, updatedAt: now }),
-      userMessage: mapMessage(userMessageRow),
-      assistantMessage: mapMessage(assistantMessageRow),
-    };
+    return { threadRow, userMessageRow };
   });
+}
+
+export async function sendProjectAssistantMessage(
+  actorUserId: string,
+  workspaceId: string,
+  projectId: string,
+  input: SendProjectAssistantMessageBody,
+) {
+  const { threadRow, userMessageRow } = await persistProjectAssistantUserMessage(
+    actorUserId,
+    workspaceId,
+    projectId,
+    input,
+  );
+
+  const history = await loadCreateChatHistory(threadRow.id, {
+    id: userMessageRow.id,
+    createdAt: userMessageRow.createdAt,
+  });
+
+  const assistantContent = await generateCreateAssistantReply({
+    chatModelId: input.chatModelId,
+    threadSummary: threadRow.summary,
+    history,
+    userPrompt: input.prompt,
+    referenceAssetIds: input.referenceAssetIds,
+  });
+
+  const completed = await completeAssistantTurn({
+    threadRow,
+    userMessageRow,
+    prompt: input.prompt,
+    assistantContent,
+  });
+
+  return {
+    thread: completed.thread,
+    userMessage: mapMessage(userMessageRow),
+    assistantMessage: completed.assistantMessage,
+  };
 }
 
 export { AssistantMessageListCursorError };
