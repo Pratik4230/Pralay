@@ -105,3 +105,9 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "workspace_invite",
   "system",
 ]);
+
+export const assistantMessageRoleEnum = pgEnum("assistant_message_role", [
+  "user",
+  "assistant",
+  "system",
+]);

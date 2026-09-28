@@ -1,5 +1,6 @@
 import { registerAuthHandler, registerAuthRoutes } from "./features/auth/index.js";
 import { registerAssetsFeature } from "./features/assets/index.js";
+import { registerAssistantFeature } from "./features/assistant/index.js";
 import { registerMediaFeature } from "./features/media/index.js";
 import { registerProjectsFeature } from "./features/projects/index.js";
 import { registerSystemFeature } from "./features/system/index.js";
@@ -19,6 +20,7 @@ app.use("/api/v1/*", sessionMiddleware);
 registerAuthRoutes(app);
 registerWorkspaceFeature(app);
 registerProjectsFeature(app);
+registerAssistantFeature(app);
 registerAssetsFeature(app);
 registerMediaFeature(app);
 registerTrashFeature(app);

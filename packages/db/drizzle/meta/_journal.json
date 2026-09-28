@@ -36,6 +36,20 @@
       "when": 1789805070457,
       "tag": "0004_spicy_solo",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789805070458,
+      "tag": "0005_workspace_cover_image",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790570705463,
+      "tag": "0006_assistant_chat",
+      "breakpoints": true
     }
   ]
 }

@@ -14,6 +14,7 @@ export * from "./collection-assets.js";
 export * from "./presets.js";
 export * from "./generations.js";
 export * from "./generation-events.js";
+export * from "./assistant-chat.js";
 export * from "./brand-kits.js";
 export * from "./brand-kit-assets.js";
 export * from "./templates.js";

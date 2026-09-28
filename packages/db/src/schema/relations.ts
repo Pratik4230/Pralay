@@ -1,5 +1,9 @@
 import { relations } from "drizzle-orm";
 
+import {
+  assistantMessages,
+  assistantThreads,
+} from "./assistant-chat.js";
 import { assets } from "./assets.js";
 import { assetVersions } from "./asset-versions.js";
 import { brandKitAssets } from "./brand-kit-assets.js";
@@ -28,6 +32,7 @@ export const workspacesRelations = relations(workspaces, ({ many, one }) => ({
   assets: many(assets),
   collections: many(collections),
   generations: many(generations),
+  assistantThreads: many(assistantThreads),
   brandKit: one(brandKits),
   credits: one(workspaceCredits),
   usageEntries: many(usageLedger),
@@ -79,6 +84,7 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   assets: many(projectAssets),
   collections: many(collections),
   generations: many(generations),
+  assistantThreads: many(assistantThreads),
   templates: many(templates),
 }));
 
@@ -160,6 +166,40 @@ export const collectionAssetsRelations = relations(
     asset: one(assets, {
       fields: [collectionAssets.assetId],
       references: [assets.id],
+    }),
+  }),
+);
+
+export const assistantThreadsRelations = relations(
+  assistantThreads,
+  ({ one, many }) => ({
+    workspace: one(workspaces, {
+      fields: [assistantThreads.workspaceId],
+      references: [workspaces.id],
+    }),
+    project: one(projects, {
+      fields: [assistantThreads.projectId],
+      references: [projects.id],
+    }),
+    messages: many(assistantMessages),
+    summaryThroughMessage: one(assistantMessages, {
+      fields: [assistantThreads.summaryThroughMessageId],
+      references: [assistantMessages.id],
+      relationName: "threadSummaryThroughMessage",
+    }),
+  }),
+);
+
+export const assistantMessagesRelations = relations(
+  assistantMessages,
+  ({ one }) => ({
+    thread: one(assistantThreads, {
+      fields: [assistantMessages.threadId],
+      references: [assistantThreads.id],
+    }),
+    generation: one(generations, {
+      fields: [assistantMessages.generationId],
+      references: [generations.id],
     }),
   }),
 );
