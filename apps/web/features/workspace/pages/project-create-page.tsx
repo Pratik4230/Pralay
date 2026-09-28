@@ -7,6 +7,7 @@ import { CreateProjectRuntimeProvider } from "@/features/create/components/creat
 import { CreateThreadWelcome } from "@/features/create/components/create-thread-welcome";
 import { CreateThreadSelector } from "@/features/create/components/create-thread-selector";
 import { useProjectCreateUi } from "@/features/create/hooks/use-project-create-ui";
+import { useInfiniteWorkspaceAssets } from "@/features/workspace/hooks/use-workspace-assets";
 import { useWorkspaceProject } from "@/features/workspace/hooks/use-workspace-projects";
 import { Thread } from "@/global/components/assistant-ui/elements/thread.aui";
 
@@ -21,8 +22,15 @@ export function ProjectCreatePage({
 }: ProjectCreatePageProps) {
   const projectQuery = useWorkspaceProject(workspaceId, projectId);
 
-  const { hydrated, threads, activeThreadId, createThread, selectThread } =
-    useProjectCreateUi(projectId);
+  useInfiniteWorkspaceAssets(workspaceId, {
+    scope: "project",
+    projectId,
+    limit: 50,
+  });
+  useInfiniteWorkspaceAssets(workspaceId, { scope: "workspace", limit: 50 });
+
+  const { hydrated, threadsLoading, threads, activeThreadId, createThread, selectThread } =
+    useProjectCreateUi(workspaceId, projectId);
 
   const threadComponents = useMemo(
     () => ({
@@ -32,7 +40,7 @@ export function ProjectCreatePage({
     [workspaceId, projectId],
   );
 
-  if (projectQuery.isLoading || !hydrated) {
+  if (projectQuery.isLoading || !hydrated || threadsLoading) {
     return (
       <div className="flex h-[calc(100dvh-3.5rem)] items-center justify-center text-sm text-muted-foreground">
         Loading…

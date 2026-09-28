@@ -6,12 +6,17 @@ import {
   useExternalStoreRuntime,
   type AppendMessage,
 } from "@assistant-ui/react";
-import { useShallow } from "zustand/react/shallow";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { createPralayWorkspaceAttachmentAdapter } from "@/features/create/adapters/pralay-workspace-attachment-adapter";
 import { CreateComposerSessionRestore } from "@/features/create/components/create-composer-session-restore";
+import {
+  useProjectAssistantMessages,
+  useSendProjectAssistantMessage,
+} from "@/features/create/hooks/use-project-assistant";
 import { useCreateProjectStore } from "@/features/create/store/create-project-store";
 import { convertCreateThreadMessage } from "@/features/create/utils/convert-create-thread-message";
+import { mapAssistantMessagesToCreateMessages } from "@/features/create/utils/map-assistant-messages";
 import { mergeCreateSendAttachments } from "@/features/create/utils/merge-create-send-attachments";
 
 type CreateProjectRuntimeProviderProps = {
@@ -33,23 +38,32 @@ export function CreateProjectRuntimeProvider({
   projectId,
   children,
 }: CreateProjectRuntimeProviderProps) {
+  const queryClient = useQueryClient();
+
   useEffect(() => {
     useCreateProjectStore.getState().ensureProject(projectId);
   }, [projectId]);
 
-  const messages = useCreateProjectStore(
-    useShallow((state) => {
-      const slice = state.byProject[projectId];
-      const thread = slice?.threads.find(
-        (item) => item.id === slice?.activeThreadId,
-      );
-      return thread?.messages ?? [];
-    }),
+  const activeThreadId = useCreateProjectStore(
+    (state) => state.byProject[projectId]?.activeThreadId ?? null,
   );
 
-  const isRunning = useCreateProjectStore(
-    (state) => state.byProject[projectId]?.isRunning ?? false,
+  const messagesQuery = useProjectAssistantMessages(
+    workspaceId,
+    projectId,
+    activeThreadId,
   );
+
+  const sendMutation = useSendProjectAssistantMessage(workspaceId, projectId);
+
+  const messages = useMemo(() => {
+    if (!activeThreadId || !messagesQuery.data) return [];
+    return mapAssistantMessagesToCreateMessages(
+      queryClient,
+      workspaceId,
+      messagesQuery.data.messages,
+    );
+  }, [activeThreadId, messagesQuery.data, queryClient, workspaceId]);
 
   const attachmentAdapter = useMemo(
     () => createPralayWorkspaceAttachmentAdapter(workspaceId, projectId),
@@ -64,15 +78,35 @@ export function CreateProjectRuntimeProvider({
         [];
       const libraryAssets = mergeCreateSendAttachments(staged, message);
 
-      useCreateProjectStore.getState().submitUserMessage(projectId, {
-        text,
-        libraryAssets,
-      });
-      useCreateProjectStore.getState().clearStagedAssets(projectId);
-      useCreateProjectStore.getState().setDraft(projectId, "");
+      const trimmed = text.trim();
+      if (!trimmed && libraryAssets.length === 0) return;
+
+      const prompt =
+        trimmed || "Generate using the attached reference images.";
+
+      const slice = useCreateProjectStore.getState().byProject[projectId];
+
+      try {
+        const result = await sendMutation.mutateAsync({
+          threadId: slice?.activeThreadId ?? undefined,
+          prompt,
+          referenceAssetIds: libraryAssets.map((asset) => asset.id),
+          chatModelId: slice?.session.chatModelId ?? "gpt-5.4-mini",
+        });
+
+        useCreateProjectStore
+          .getState()
+          .setActiveThreadId(projectId, result.thread.id);
+        useCreateProjectStore.getState().clearStagedAssets(projectId);
+        useCreateProjectStore.getState().setDraft(projectId, "");
+      } catch {
+        // Mutation error; add toast when Create surfaces send failures.
+      }
     },
-    [projectId],
+    [projectId, sendMutation],
   );
+
+  const isRunning = sendMutation.isPending;
 
   const runtime = useExternalStoreRuntime({
     isRunning,

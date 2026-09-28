@@ -32,7 +32,9 @@ export function CreateThreadSelector({
   onCreate,
 }: CreateThreadSelectorProps) {
   const active =
-    threads.find((thread) => thread.id === activeThreadId) ?? threads[0];
+    threads.find((thread) => thread.id === activeThreadId) ?? null;
+
+  const label = active?.title ?? "New conversation";
 
   return (
     <div className="flex items-center gap-2">
@@ -45,7 +47,7 @@ export function CreateThreadSelector({
             className="max-w-[220px] justify-between gap-2"
           >
             <MessageSquareIcon className="size-3.5 shrink-0 text-primary" />
-            <span className="truncate">{active?.title ?? "Thread"}</span>
+            <span className="truncate">{label}</span>
             <ChevronDownIcon className="size-3.5 shrink-0 opacity-60" />
           </Button>
         </DropdownMenuTrigger>

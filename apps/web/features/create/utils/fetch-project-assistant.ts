@@ -1,0 +1,71 @@
+import type {
+  AssistantMessage,
+  AssistantThread,
+  SendProjectAssistantMessageBody,
+} from "@repo/validators";
+import {
+  listProjectAssistantMessagesResponseSchema,
+  listProjectAssistantThreadsResponseSchema,
+  sendProjectAssistantMessageResponseSchema,
+} from "@repo/validators";
+
+import { fetchApiClient } from "@/global/utils/api-client";
+
+export function fetchProjectAssistantThreads(
+  workspaceId: string,
+  projectId: string,
+) {
+  return fetchApiClient(
+    `/api/v1/workspaces/${workspaceId}/projects/${projectId}/assistant/threads`,
+  ).then((data) => listProjectAssistantThreadsResponseSchema.parse(data));
+}
+
+export function fetchProjectAssistantMessages(
+  workspaceId: string,
+  projectId: string,
+  threadId: string,
+  options?: { limit?: number; cursor?: string },
+) {
+  const params = new URLSearchParams();
+  if (options?.limit) params.set("limit", String(options.limit));
+  if (options?.cursor) params.set("cursor", options.cursor);
+  const query = params.toString();
+
+  return fetchApiClient(
+    `/api/v1/workspaces/${workspaceId}/projects/${projectId}/assistant/threads/${threadId}/messages${query ? `?${query}` : ""}`,
+  ).then((data) => listProjectAssistantMessagesResponseSchema.parse(data));
+}
+
+export function sendProjectAssistantMessage(
+  workspaceId: string,
+  projectId: string,
+  body: SendProjectAssistantMessageBody,
+) {
+  return fetchApiClient(
+    `/api/v1/workspaces/${workspaceId}/projects/${projectId}/assistant/messages`,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
+  ).then((data) => sendProjectAssistantMessageResponseSchema.parse(data));
+}
+
+export function createProjectAssistantThread(
+  workspaceId: string,
+  projectId: string,
+  body?: { title?: string },
+) {
+  return fetchApiClient<{ thread: AssistantThread }>(
+    `/api/v1/workspaces/${workspaceId}/projects/${projectId}/assistant/threads`,
+    {
+      method: "POST",
+      body: JSON.stringify(body ?? {}),
+    },
+  );
+}
+
+export type {
+  AssistantMessage,
+  AssistantThread,
+  SendProjectAssistantMessageBody,
+};
