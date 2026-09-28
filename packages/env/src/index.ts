@@ -15,3 +15,10 @@ export {
   hasOpenAiApiKey,
   hasXaiApiKey,
 } from "./ai.js";
+
+export {
+  getInngestEventKey,
+  hasInngestEventKey,
+  inngestEnv,
+  isInngestDevMode,
+} from "./inngest.js";

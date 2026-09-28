@@ -5,6 +5,7 @@
     "build": "turbo run build",
     "dev": "turbo run dev",
     "dev:api": "turbo dev --filter=api",
+    "dev:inngest": "npx inngest-cli@latest dev -u http://localhost:3001/api/inngest",
     "docker:up": "docker compose -f infra/ec2/docker-compose.yml up -d --wait",
     "docker:down": "docker compose -f infra/ec2/docker-compose.yml down",
     "docker:ps": "docker compose -f infra/ec2/docker-compose.yml ps",

@@ -18,7 +18,8 @@
     "@repo/env": "workspace:*",
     "@repo/storage": "workspace:*",
     "@repo/validators": "workspace:*",
-    "hono": "^4.13.7"
+    "hono": "^4.13.7",
+    "inngest": "^4.21.0"
   },
   "devDependencies": {
     "@repo/typescript-config": "workspace:*",
