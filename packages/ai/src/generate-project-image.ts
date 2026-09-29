@@ -1,5 +1,6 @@
 import { GROK_IMAGINE_MODEL, GROK_IMAGINE_PROVIDER } from "./constants.js";
 import { downloadBinary } from "./download.js";
+import { editImagineWithReferences } from "./edit-imagine.js";
 import { generateImagineImage } from "./imagine.js";
 import { getXaiApiKey, hasXaiApiKey } from "@repo/env";
 
@@ -7,6 +8,8 @@ export type ProjectImageGenerateInput = {
   prompt: string;
   aspectRatio?: string;
   model?: string | null;
+  /** Presigned HTTPS URLs for library reference images (max 5). */
+  referenceImageUrls?: string[];
 };
 
 export type ProjectImageGenerateResult = {
@@ -32,6 +35,26 @@ export async function generateProjectImage(
   }
 
   const apiKey = getXaiApiKey();
+  const refs = (input.referenceImageUrls ?? []).filter(Boolean).slice(0, 5);
+
+  if (refs.length > 0) {
+    const edit = await editImagineWithReferences({
+      prompt: input.prompt,
+      referenceImageUrls: refs,
+      aspectRatio: input.aspectRatio,
+      apiKey,
+      model: input.model ?? undefined,
+    });
+    const { buffer, contentType } = await downloadBinary(edit.url);
+    return {
+      buffer,
+      contentType,
+      provider: GROK_IMAGINE_PROVIDER,
+      model: edit.model,
+      revisedPrompt: edit.revisedPrompt,
+    };
+  }
+
   const model = input.model ?? GROK_IMAGINE_MODEL;
   const imagine = await generateImagineImage({
     prompt: input.prompt,

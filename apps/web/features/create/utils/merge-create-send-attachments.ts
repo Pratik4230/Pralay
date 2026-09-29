@@ -7,8 +7,18 @@ export function mergeCreateSendAttachments(
   stagedLibraryAssets: CreateAttachedAsset[],
   message: AppendMessage,
 ): CreateAttachedAsset[] {
-  const merged = [...stagedLibraryAssets];
-  const knownIds = new Set(stagedLibraryAssets.map((asset) => asset.id));
+  const attachmentIds = new Set(
+    (message.attachments ?? []).map((attachment) => attachment.id),
+  );
+
+  const merged: CreateAttachedAsset[] = [];
+  const knownIds = new Set<string>();
+
+  for (const asset of stagedLibraryAssets) {
+    if (!attachmentIds.has(asset.id)) continue;
+    merged.push(asset);
+    knownIds.add(asset.id);
+  }
 
   for (const attachment of message.attachments ?? []) {
     if (knownIds.has(attachment.id)) continue;

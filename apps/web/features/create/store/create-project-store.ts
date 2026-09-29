@@ -20,6 +20,8 @@ type ProjectCreateSlice = {
   newChatMode: boolean;
   session: CreateSessionState;
   stagedAssets: CreateAttachedAsset[];
+  /** Composer upload attachment id → library name before send. */
+  composerUploadNames: Record<string, string>;
 };
 
 function defaultProjectSlice(): ProjectCreateSlice {
@@ -28,6 +30,7 @@ function defaultProjectSlice(): ProjectCreateSlice {
     newChatMode: false,
     session: { ...DEFAULT_SESSION },
     stagedAssets: [],
+    composerUploadNames: {},
   };
 }
 
@@ -48,6 +51,14 @@ type CreateProjectStoreState = {
   setActiveThreadId: (projectId: string, threadId: string) => void;
   setChatModel: (projectId: string, chatModelId: CreateChatModelId) => void;
   toggleReferenceAsset: (projectId: string, assetId: string) => void;
+  setComposerUploadName: (
+    projectId: string,
+    attachmentId: string,
+    name: string,
+  ) => void;
+  getComposerUploadName: (projectId: string, attachmentId: string) => string | undefined;
+  clearComposerUploadNames: (projectId: string) => void;
+  removeComposerUploadName: (projectId: string, attachmentId: string) => void;
 };
 
 export const useCreateProjectStore = create<CreateProjectStoreState>()(
@@ -112,6 +123,7 @@ export const useCreateProjectStore = create<CreateProjectStoreState>()(
 
     clearStagedAssets: (projectId) => {
       get().setStagedAssets(projectId, () => []);
+      get().clearComposerUploadNames(projectId);
     },
 
     startNewChat: (projectId) => {
@@ -184,6 +196,66 @@ export const useCreateProjectStore = create<CreateProjectStoreState>()(
                   ? slice.session.referenceAssetIds.filter((id) => id !== assetId)
                   : [...slice.session.referenceAssetIds, assetId],
               },
+            },
+          },
+        };
+      });
+    },
+
+    setComposerUploadName: (projectId, attachmentId, name) => {
+      get().ensureProject(projectId);
+      set((state) => {
+        const slice = state.byProject[projectId] ?? defaultProjectSlice();
+        return {
+          byProject: {
+            ...state.byProject,
+            [projectId]: {
+              ...slice,
+              composerUploadNames: {
+                ...slice.composerUploadNames,
+                [attachmentId]: name,
+              },
+            },
+          },
+        };
+      });
+    },
+
+    getComposerUploadName: (projectId, attachmentId) => {
+      return get().byProject[projectId]?.composerUploadNames[attachmentId];
+    },
+
+    clearComposerUploadNames: (projectId) => {
+      get().ensureProject(projectId);
+      set((state) => {
+        const slice = state.byProject[projectId] ?? defaultProjectSlice();
+        return {
+          byProject: {
+            ...state.byProject,
+            [projectId]: {
+              ...slice,
+              composerUploadNames: {},
+            },
+          },
+        };
+      });
+    },
+
+    removeComposerUploadName: (projectId, attachmentId) => {
+      get().ensureProject(projectId);
+      set((state) => {
+        const slice = state.byProject[projectId] ?? defaultProjectSlice();
+        if (!slice.composerUploadNames[attachmentId]) {
+          return state;
+        }
+        const { [attachmentId]: _removed, ...composerUploadNames } =
+          slice.composerUploadNames;
+        return {
+          byProject: {
+            ...state.byProject,
+            [projectId]: {
+              ...slice,
+              composerUploadNames,
             },
           },
         };

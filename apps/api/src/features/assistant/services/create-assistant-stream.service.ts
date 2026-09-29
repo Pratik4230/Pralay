@@ -100,7 +100,7 @@ function buildChatContext(
   projectId: string,
   body: SendProjectAssistantMessageBody,
   userMessageRef: { row: MessageRow },
-  write: (event: AssistantMessageStreamEvent) => void,
+  onGenerationLinked: CreateAssistantChatContext["onGenerationLinked"],
 ): CreateAssistantChatContext {
   return {
     actorUserId,
@@ -111,125 +111,155 @@ function buildChatContext(
     setUserMessageRow: (row) => {
       userMessageRef.row = row;
     },
-    onGenerationLinked: (userMessage) => {
-      write({ type: "generation", userMessage });
-    },
+    onGenerationLinked,
   };
 }
 
+function* drainSideChannel(
+  sideChannel: AssistantMessageStreamEvent[],
+): Generator<AssistantMessageStreamEvent> {
+  while (sideChannel.length > 0) {
+    const event = sideChannel.shift();
+    if (event) yield event;
+  }
+}
+
+/**
+ * NDJSON assistant turn events. Uses AsyncGenerator + Response (Bun-safe);
+ * avoid ReadableStreamDefaultController.enqueue after long async tool loops.
+ */
+export async function* iterateProjectAssistantMessageStream(
+  actorUserId: string,
+  workspaceId: string,
+  projectId: string,
+  body: SendProjectAssistantMessageBody,
+): AsyncGenerator<AssistantMessageStreamEvent> {
+  const sideChannel: AssistantMessageStreamEvent[] = [];
+
+  try {
+    const persisted = await persistProjectAssistantUserMessage(
+      actorUserId,
+      workspaceId,
+      projectId,
+      body,
+    );
+
+    let { threadRow, userMessageRow } = persisted;
+    const userMessageRef = { row: userMessageRow };
+
+    if (body.enqueueGeneration) {
+      try {
+        const linked = await attachGenerationToAssistantUserMessage({
+          actorUserId,
+          workspaceId,
+          projectId,
+          messageId: userMessageRow.id,
+          prompt: body.prompt,
+          inputAssetIds: body.referenceAssetIds,
+          aspectRatio: body.aspectRatio,
+        });
+        userMessageRow = linked.userMessageRow;
+        userMessageRef.row = userMessageRow;
+      } catch (error) {
+        if (!(error instanceof StorageNotConfiguredError)) {
+          throw error;
+        }
+      }
+    }
+
+    yield {
+      type: "meta",
+      thread: mapThread(threadRow),
+      userMessage: mapMessage(userMessageRow),
+    };
+
+    const history = await loadCreateChatHistory(threadRow.id, {
+      id: userMessageRow.id,
+      createdAt: userMessageRow.createdAt,
+    });
+
+    const chatContext = buildChatContext(
+      actorUserId,
+      workspaceId,
+      projectId,
+      body,
+      userMessageRef,
+      (userMessage) => {
+        sideChannel.push({ type: "generation", userMessage });
+      },
+    );
+
+    const turnInput = {
+      chatModelId: body.chatModelId,
+      workspaceId,
+      projectId,
+      threadSummary: threadRow.summary,
+      history,
+      userPrompt: body.prompt,
+      referenceAssetIds: body.referenceAssetIds,
+    };
+
+    let assistantContent = "";
+    for await (const delta of streamCreateAssistantReply(
+      turnInput,
+      chatContext,
+    )) {
+      yield* drainSideChannel(sideChannel);
+      assistantContent += delta;
+      yield { type: "text", delta };
+    }
+
+    yield* drainSideChannel(sideChannel);
+
+    assistantContent = assistantContent.trim();
+    if (!assistantContent) {
+      assistantContent = await generateCreateAssistantReply(
+        turnInput,
+        chatContext,
+      );
+    }
+
+    const completed = await completeAssistantTurn({
+      threadRow,
+      userMessageRow: userMessageRef.row,
+      prompt: body.prompt,
+      assistantContent,
+    });
+
+    yield {
+      type: "done",
+      thread: completed.thread,
+      assistantMessage: completed.assistantMessage,
+    };
+  } catch (error) {
+    if (error instanceof AssistantThreadNotFoundError) {
+      yield { type: "error", message: "Thread not found" };
+      return;
+    }
+    console.error("[create-assistant] stream failed", error);
+    yield {
+      type: "error",
+      message: "Something went wrong while streaming the reply.",
+    };
+  }
+}
+
+/** Byte stream for `new Response(...)` (works on Bun; avoids controller enqueue bugs). */
 export function createProjectAssistantMessageStream(
   actorUserId: string,
   workspaceId: string,
   projectId: string,
   body: SendProjectAssistantMessageBody,
-): ReadableStream<Uint8Array> {
-  return new ReadableStream({
-    async start(controller) {
-      const write = (event: AssistantMessageStreamEvent) => {
-        controller.enqueue(encodeStreamEvent(event));
-      };
-
-      try {
-        const persisted = await persistProjectAssistantUserMessage(
-          actorUserId,
-          workspaceId,
-          projectId,
-          body,
-        );
-
-        let { threadRow, userMessageRow } = persisted;
-        const userMessageRef = { row: userMessageRow };
-
-        if (body.enqueueGeneration) {
-          try {
-            const linked = await attachGenerationToAssistantUserMessage({
-              actorUserId,
-              workspaceId,
-              projectId,
-              messageId: userMessageRow.id,
-              prompt: body.prompt,
-              inputAssetIds: body.referenceAssetIds,
-              aspectRatio: body.aspectRatio,
-            });
-            userMessageRow = linked.userMessageRow;
-            userMessageRef.row = userMessageRow;
-          } catch (error) {
-            if (!(error instanceof StorageNotConfiguredError)) {
-              throw error;
-            }
-          }
-        }
-
-        write({
-          type: "meta",
-          thread: mapThread(threadRow),
-          userMessage: mapMessage(userMessageRow),
-        });
-
-        const history = await loadCreateChatHistory(threadRow.id, {
-          id: userMessageRow.id,
-          createdAt: userMessageRow.createdAt,
-        });
-
-        const chatContext = buildChatContext(
-          actorUserId,
-          workspaceId,
-          projectId,
-          body,
-          userMessageRef,
-          write,
-        );
-
-        const turnInput = {
-          chatModelId: body.chatModelId,
-          threadSummary: threadRow.summary,
-          history,
-          userPrompt: body.prompt,
-          referenceAssetIds: body.referenceAssetIds,
-        };
-
-        let assistantContent = "";
-        for await (const delta of streamCreateAssistantReply(
-          turnInput,
-          chatContext,
-        )) {
-          assistantContent += delta;
-          write({ type: "text", delta });
-        }
-
-        assistantContent = assistantContent.trim();
-        if (!assistantContent) {
-          assistantContent = await generateCreateAssistantReply(
-            turnInput,
-            chatContext,
-          );
-        }
-
-        const completed = await completeAssistantTurn({
-          threadRow,
-          userMessageRow: userMessageRef.row,
-          prompt: body.prompt,
-          assistantContent,
-        });
-
-        write({
-          type: "done",
-          thread: completed.thread,
-          assistantMessage: completed.assistantMessage,
-        });
-        controller.close();
-      } catch (error) {
-        if (error instanceof AssistantThreadNotFoundError) {
-          write({ type: "error", message: "Thread not found" });
-        } else {
-          console.error("[create-assistant] stream failed", error);
-          write({
-            type: "error",
-            message: "Something went wrong while streaming the reply.",
-          });
-        }
-        controller.close();
-      }
-    },
-  });
+): AsyncGenerator<Uint8Array> {
+  async function* encodeNdjson() {
+    for await (const event of iterateProjectAssistantMessageStream(
+      actorUserId,
+      workspaceId,
+      projectId,
+      body,
+    )) {
+      yield encodeStreamEvent(event);
+    }
+  }
+  return encodeNdjson();
 }

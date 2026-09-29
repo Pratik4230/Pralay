@@ -34,13 +34,20 @@ export type CreateAssistantChatContext = {
 function buildRunContext(
   chatContext: CreateAssistantChatContext,
 ): CreateChatRunContext {
+  const pendingVisionPreviews: Array<{ name: string; url: string }> = [];
   return {
-    toolHandlers: createCreateChatToolHandlers(chatContext),
+    pendingVisionPreviews,
+    toolHandlers: createCreateChatToolHandlers({
+      ...chatContext,
+      pendingVisionPreviews,
+    }),
   };
 }
 
 type ChatTurnInput = {
   chatModelId: CreateChatModelId;
+  workspaceId: string;
+  projectId: string;
   threadSummary: string | null;
   history: CreateChatHistoryMessage[];
   userPrompt: string;

@@ -1,5 +1,6 @@
 export {
   runCreateChatTurn,
+  runOpenAiWebSearch,
   streamCreateChatTurn,
   type CreateChatHistoryMessage,
   type CreateChatRunContext,
@@ -7,7 +8,11 @@ export {
 } from "./create/create-chat-graph.js";
 export {
   type GetGenerationStatusToolResult,
+  type InspectAssetsToolResult,
+  type LinkReferenceAssetsToolResult,
+  type SearchAssetsToolResult,
   type StartGenerationToolResult,
+  type WebSearchToolResult,
   type CreateChatToolHandlers,
 } from "./create/create-chat-tools.js";
 export { generateCreateThreadTitle } from "./create/thread-title.js";

@@ -12,6 +12,7 @@ import type { AssistantMessage } from "@repo/validators";
 
 import { createPralayWorkspaceAttachmentAdapter } from "@/features/create/adapters/pralay-workspace-attachment-adapter";
 import { CreateComposerSessionRestore } from "@/features/create/components/create-composer-session-restore";
+import { CreateComposerSendCleanup } from "@/features/create/components/create-composer-send-cleanup";
 import { CreateGenerationsProvider } from "@/features/create/components/create-generations-context";
 import { useProjectAssistantMessages } from "@/features/create/hooks/use-project-assistant";
 import { useCreateProjectStore } from "@/features/create/store/create-project-store";
@@ -51,6 +52,7 @@ export function CreateProjectRuntimeProvider({
 }: CreateProjectRuntimeProviderProps) {
   const queryClient = useQueryClient();
   const abortRef = useRef<AbortController | null>(null);
+  const composerCleanupRef = useRef<(() => Promise<void>) | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [streamState, setStreamState] = useState<ActiveStreamState | null>(
     null,
@@ -220,7 +222,6 @@ export function CreateProjectRuntimeProvider({
           },
         );
 
-        useCreateProjectStore.getState().clearStagedAssets(projectId);
         useCreateProjectStore.getState().setDraft(projectId, "");
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
@@ -228,6 +229,7 @@ export function CreateProjectRuntimeProvider({
         }
       } finally {
         setIsRunning(false);
+        await composerCleanupRef.current?.().catch(() => undefined);
       }
     },
     [projectId, queryClient, workspaceId],
@@ -258,6 +260,10 @@ export function CreateProjectRuntimeProvider({
       byMessageId={generationsByMessageId}
     >
       <AssistantRuntimeProvider runtime={runtime}>
+        <CreateComposerSendCleanup
+          projectId={projectId}
+          cleanupRef={composerCleanupRef}
+        />
         <CreateComposerSessionRestore
           workspaceId={workspaceId}
           projectId={projectId}

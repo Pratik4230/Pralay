@@ -14,3 +14,9 @@ export {
   type ImagineGenerateInput,
   type ImagineGenerateResult,
 } from "./imagine.js";
+export {
+  editImagineWithReferences,
+  GROK_IMAGINE_EDIT_MODEL,
+  type ImagineEditInput,
+  type ImagineEditResult,
+} from "./edit-imagine.js";

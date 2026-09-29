@@ -18,7 +18,7 @@ export function createCreateProjectComposer(
           projectId={projectId}
         />
         <CreateComposerAttachmentSync projectId={projectId} />
-        <CreateProjectThreadComposer autoFocus={autoFocus} />
+        <CreateProjectThreadComposer autoFocus={autoFocus} projectId={projectId} />
       </div>
     );
   };

@@ -316,6 +316,8 @@ export async function sendProjectAssistantMessage(
   const assistantContent = await generateCreateAssistantReply(
     {
       chatModelId: input.chatModelId,
+      workspaceId,
+      projectId,
       threadSummary: threadRow.summary,
       history,
       userPrompt: input.prompt,

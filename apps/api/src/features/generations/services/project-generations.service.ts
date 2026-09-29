@@ -9,6 +9,7 @@ import { assets, assistantMessages, generationEvents, generations, projectAssets
 import { hasXaiApiKey } from "@repo/env";
 import {
   buildGeneratedAssetKey,
+  createPresignedDownloadUrl,
   isStorageConfigured,
   putObjectBuffer,
   storageEnv,
@@ -131,6 +132,51 @@ async function assertInputAssets(
   if (rows.length !== inputAssetIds.length) {
     throw new InvalidGenerationInputAssetsError();
   }
+}
+
+async function loadReferenceImageUrls(
+  workspaceId: string,
+  projectId: string,
+  inputAssetIds: string[],
+): Promise<string[]> {
+  if (inputAssetIds.length === 0) {
+    return [];
+  }
+
+  await assertInputAssets(workspaceId, projectId, inputAssetIds);
+
+  const rows = await db
+    .select({
+      id: assets.id,
+      s3Key: assets.s3Key,
+      mimeType: assets.mimeType,
+    })
+    .from(assets)
+    .where(
+      and(
+        inArray(assets.id, inputAssetIds.slice(0, 5)),
+        eq(assets.workspaceId, workspaceId),
+        isNull(assets.deletedAt),
+      ),
+    );
+
+  const order = new Map(inputAssetIds.map((id, index) => [id, index]));
+  rows.sort(
+    (a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0),
+  );
+
+  const urls: string[] = [];
+  for (const row of rows) {
+    if (!row.mimeType.startsWith("image/")) continue;
+    urls.push(
+      await createPresignedDownloadUrl({
+        key: row.s3Key,
+        expiresIn: 3600,
+      }),
+    );
+  }
+
+  return urls.slice(0, 5);
 }
 
 async function recordGenerationEvent(
@@ -365,10 +411,17 @@ export async function runGenerationJob(generationId: string) {
   await recordGenerationEvent(generationId, "processing", "Generation started");
 
   try {
+    const referenceImageUrls = await loadReferenceImageUrls(
+      row.workspaceId,
+      row.projectId,
+      row.inputAssetIds,
+    );
+
     const image = await generateProjectImage({
       prompt: row.prompt,
       aspectRatio: row.aspectRatio ?? undefined,
       model: row.model,
+      referenceImageUrls,
     });
 
     const bucket = storageEnv.bucket;

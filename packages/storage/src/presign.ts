@@ -32,6 +32,7 @@ export async function createPresignedUploadUrl(input: {
     Bucket: bucket,
     Key: input.key,
     ContentType: input.contentType,
+    CacheControl: "public, max-age=31536000, immutable",
   });
 
   const uploadUrl = await getSignedUrl(getS3Client(), command, { expiresIn });
@@ -72,6 +73,7 @@ export async function putObjectBuffer(input: {
       Bucket: bucket,
       Key: input.key,
       ContentType: input.contentType,
+      CacheControl: "public, max-age=31536000, immutable",
       Body: input.body,
     }),
   );
