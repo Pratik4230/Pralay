@@ -28,3 +28,10 @@ export function replaceActiveComposerMention(
 ): string {
   return `${text.slice(0, mention.start)}@${assetName} ${text.slice(mention.end)}`;
 }
+
+export function caretIndexAfterComposerMention(
+  mention: ActiveComposerMention,
+  assetName: string,
+): number {
+  return mention.start + `@${assetName} `.length;
+}

@@ -9,6 +9,7 @@ import type { CreateAssetOption } from "@/features/create/types/create-asset-opt
 import { useCreateProjectStore } from "@/features/create/store/create-project-store";
 import { useCreateComposerCaret } from "@/features/create/components/create-composer-caret-context";
 import {
+  caretIndexAfterComposerMention,
   findActiveComposerMention,
   replaceActiveComposerMention,
   type ActiveComposerMention,
@@ -26,7 +27,8 @@ export const CreateComposerAssetMentions: FC<
 > = ({ workspaceId, projectId }) => {
   const aui = useAui();
   const draft = useAuiState((state) => state.composer.text);
-  const { getCaretIndex, subscribeCaret } = useCreateComposerCaret();
+  const { getCaretIndex, subscribeCaretMove, queueCaretAfterEdit } =
+    useCreateComposerCaret();
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
@@ -34,6 +36,7 @@ export const CreateComposerAssetMentions: FC<
   const listRef = useRef<HTMLUListElement>(null);
   const draftRef = useRef(draft);
   const activeMentionRef = useRef<ActiveComposerMention | null>(null);
+  const skipMentionDetectionRef = useRef(false);
 
   draftRef.current = draft;
 
@@ -47,11 +50,19 @@ export const CreateComposerAssetMentions: FC<
       mentionOpen,
     );
 
-  useEffect(() => subscribeCaret(() => setCaretTick((value) => value + 1)), [
-    subscribeCaret,
+  useEffect(() => subscribeCaretMove(() => setCaretTick((value) => value + 1)), [
+    subscribeCaretMove,
   ]);
 
   useEffect(() => {
+    if (skipMentionDetectionRef.current) {
+      skipMentionDetectionRef.current = false;
+      activeMentionRef.current = null;
+      setMentionOpen(false);
+      setMentionQuery("");
+      return;
+    }
+
     const active = findActiveComposerMention(draft, getCaretIndex());
     activeMentionRef.current = active;
     if (active) {
@@ -76,14 +87,24 @@ export const CreateComposerAssetMentions: FC<
   }, [activeIndex, mentionOpen, mentionMatches.length]);
 
   const attachAsset = useCallback(
-    async (option: CreateAssetOption) => {
+    (option: CreateAssetOption) => {
       const currentDraft = draftRef.current;
       const mention = activeMentionRef.current;
-      const nextDraft = mention
-        ? replaceActiveComposerMention(currentDraft, mention, option.name)
-        : currentDraft.replace(/@([^\s@]*)$/, `@${option.name} `);
+      if (!mention) return;
+
+      const nextDraft = replaceActiveComposerMention(
+        currentDraft,
+        mention,
+        option.name,
+      );
+      const nextCaret = caretIndexAfterComposerMention(mention, option.name);
+
+      skipMentionDetectionRef.current = true;
+      queueCaretAfterEdit(nextCaret);
       aui.composer.setText(nextDraft);
       setMentionOpen(false);
+      setMentionQuery("");
+      activeMentionRef.current = null;
 
       const alreadyStaged = useCreateProjectStore
         .getState()
@@ -100,7 +121,7 @@ export const CreateComposerAssetMentions: FC<
         },
       ]);
     },
-    [aui, projectId, setStagedAssets],
+    [aui, projectId, queueCaretAfterEdit, setStagedAssets],
   );
 
   useEffect(() => {
@@ -124,7 +145,7 @@ export const CreateComposerAssetMentions: FC<
       if (event.key === "Enter") {
         event.preventDefault();
         const option = mentionMatches[activeIndex];
-        if (option) void attachAsset(option);
+        if (option) attachAsset(option);
         return;
       }
       if (event.key === "Escape") {
@@ -168,7 +189,7 @@ export const CreateComposerAssetMentions: FC<
                       : "hover:bg-muted/60",
                   )}
                   onMouseEnter={() => setActiveIndex(index)}
-                  onClick={() => void attachAsset(option)}
+                  onClick={() => attachAsset(option)}
                 >
                   <div
                     className={cn(

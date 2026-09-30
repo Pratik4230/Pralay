@@ -10,10 +10,13 @@ import {
 } from "react";
 
 type CreateComposerCaretContextValue = {
+  registerTextarea: (el: HTMLTextAreaElement | null) => void;
   getCaretIndex: () => number;
-  setCaretIndex: (index: number) => void;
-  /** Subscribe when caret moves (mention menu only; avoids composer re-renders). */
-  subscribeCaret: (listener: () => void) => () => void;
+  subscribeCaretMove: (listener: () => void) => () => void;
+  notifyCaretMove: () => void;
+  /** Set caret once after the next composer `text` update (mention pick). */
+  queueCaretAfterEdit: (index: number) => void;
+  consumeQueuedCaret: () => number | null;
 };
 
 const CreateComposerCaretContext =
@@ -24,36 +27,60 @@ export function CreateComposerCaretProvider({
 }: {
   children: ReactNode;
 }) {
-  const caretRef = useRef(0);
-  const listenersRef = useRef(new Set<() => void>());
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const caretListenersRef = useRef(new Set<() => void>());
+  const queuedCaretRef = useRef<number | null>(null);
 
-  const notify = useCallback(() => {
-    for (const listener of listenersRef.current) {
+  const registerTextarea = useCallback((el: HTMLTextAreaElement | null) => {
+    textareaRef.current = el;
+  }, []);
+
+  const getCaretIndex = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return 0;
+    return el.selectionStart ?? el.value.length;
+  }, []);
+
+  const notifyCaretMove = useCallback(() => {
+    for (const listener of caretListenersRef.current) {
       listener();
     }
   }, []);
 
-  const getCaretIndex = useCallback(() => caretRef.current, []);
-
-  const setCaretIndex = useCallback(
-    (index: number) => {
-      const next = Math.max(0, index);
-      caretRef.current = next;
-      notify();
-    },
-    [notify],
-  );
-
-  const subscribeCaret = useCallback((listener: () => void) => {
-    listenersRef.current.add(listener);
+  const subscribeCaretMove = useCallback((listener: () => void) => {
+    caretListenersRef.current.add(listener);
     return () => {
-      listenersRef.current.delete(listener);
+      caretListenersRef.current.delete(listener);
     };
   }, []);
 
+  const queueCaretAfterEdit = useCallback((index: number) => {
+    queuedCaretRef.current = Math.max(0, index);
+  }, []);
+
+  const consumeQueuedCaret = useCallback(() => {
+    const queued = queuedCaretRef.current;
+    queuedCaretRef.current = null;
+    return queued;
+  }, []);
+
   const value = useMemo(
-    () => ({ getCaretIndex, setCaretIndex, subscribeCaret }),
-    [getCaretIndex, setCaretIndex, subscribeCaret],
+    () => ({
+      registerTextarea,
+      getCaretIndex,
+      subscribeCaretMove,
+      notifyCaretMove,
+      queueCaretAfterEdit,
+      consumeQueuedCaret,
+    }),
+    [
+      consumeQueuedCaret,
+      getCaretIndex,
+      notifyCaretMove,
+      queueCaretAfterEdit,
+      registerTextarea,
+      subscribeCaretMove,
+    ],
   );
 
   return (

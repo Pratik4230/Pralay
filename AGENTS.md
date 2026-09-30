@@ -5,7 +5,7 @@ https://ai-sdk.dev/llms.txt
 https://docs.langchain.com/llms.txt
 
 > Multi-workspace AI creative platform. **Conversational Create + asset references first**, video later.
-> Last updated: 2026-09-27
+> Last updated: 2026-09-30
 
 This file is the source of truth for humans and coding agents working on Pralay.
 
@@ -24,11 +24,12 @@ Create youtube thumbnail where Jonathan lifting trophy with his team and jelly i
 
 **Expected behavior:**
 
-1. User types in the hero/composer; `@` opens **asset suggestions** (match name, slug, tags) from workspace + project library.
-2. User picks assets; UI shows chips/tokens (e.g. `@jonathan`) tied to real `assetId`s.
-3. On Generate/send, backend receives **prompt text + resolved `inputAssetIds` + preset/context** (e.g. YouTube thumbnail size).
-4. **LangGraph** orchestrates: load thread context → optional chat turn (OpenAI) → tools → enqueue **async image job** (Grok Imagine, cheapest tier at ship time) → persist generation + messages in Postgres.
-5. UI shows generation cards in-thread (queued → running → done) and outputs in project assets.
+1. User types in the project Create composer; **`@` at the caret** opens **asset suggestions** (name/slug/tags) from workspace + project library.
+2. Picking a suggestion inserts **`@asset_name `**, closes the suggestion menu, moves the caret **after that token (including the trailing space)**, and stages the asset id in Zustand (no composer file attachments).
+3. **Uploads** happen only via **Library / Project Assets / Create folder button** → shared **`WorkspaceAssetsUploadDialog`**; after upload, reference assets with **`@`** in the prompt.
+4. On send, API receives **prompt text + `referenceAssetIds`** (from staged `@` tokens still present in the prompt).
+5. OpenAI chat + tools (today in API; LangGraph growth path) → **`start_generation`** → Inngest + **Grok Imagine** → persist generation + messages in Postgres.
+6. UI shows **generation cards** in-thread (queued → processing → done) and outputs in project assets.
 
 **UI rule:** No em dashes in user-facing copy.
 
@@ -42,14 +43,14 @@ Create youtube thumbnail where Jonathan lifting trophy with his team and jelly i
 | **Chat / tools (Create)** | OpenAI **`gpt-5.4-mini`**                                   | Default Create chat + LangGraph tool loops ([OpenAI models](https://developers.openai.com/api/docs/models))                                                                      |
 | **Thread titles only**    | OpenAI **`gpt-5-nano`**                                     | One short call per new thread; cheapest ([gpt-5-nano](https://developers.openai.com/api/docs/models/gpt-5-nano))                                                                 |
 | **Image generation (v1)** | xAI **Grok Imagine**                                        | Cheapest suitable model per [pricing](https://docs.x.ai/developers/pricing.md) + [models](https://docs.x.ai/developers/models.md) at integration time                            |
-| **Create UI**             | [Assistant UI](https://www.assistant-ui.com/)               | Chat thread + composer + attachments; local shadcn-style components; [`useLangGraphRuntime`](https://www.assistant-ui.com/docs/runtimes/langgraph/threads) when backend is ready |
-| **Create client state**   | **Zustand** (planned)                                       | Persist draft + staged attachments per `projectId` across route navigation (until thread API is source of truth)                                                                 |
+| **Create UI**             | [Assistant UI](https://www.assistant-ui.com/)               | Chat thread + custom composer (`@` mentions, no inline upload tiles); `useExternalStoreRuntime` + assistant stream API |
+| **Create client state**   | **Zustand**                                                 | In-memory draft, **`stagedAssets`** (`@` refs), active thread per **`projectId`**; threads/messages from API            |
 
 **Chat model decision (v1):** Use **`gpt-5.4-mini`** for streamed Create replies and LangGraph tool loops. Use **`gpt-5-nano`** only for auto thread titles. Grok stays on **Imagine** for images only.
 
-**Create UI decision:** Use **Assistant UI** (not AI Elements). Install registry components into the repo (editable like shadcn). Custom **Pralay attachment adapter** (S3 presign + library `addAttachment`) and **@mention** layer on top of the composer.
+**Create UI decision:** Use **Assistant UI** (not AI Elements). Local registry components under `global/components/assistant-ui/`. **Do not** attach files in the Create composer; use **`WorkspaceAssetsUploadDialog`** + **`@`** only. Mention picker is caret-aware (`create-composer-asset-mentions.tsx`).
 
-**Create state:** Use **Zustand** (in-memory) for composer draft, staged attachment refs, and active thread selection keyed by **`projectId`** during the session. Persist threads/messages in Postgres once the Step 3 API exists; do not use browser `localStorage` for Create.
+**Create state:** **Zustand** (`create-project-store`) for composer draft, **`stagedAssets`**, and active thread id per **`projectId`**. **Postgres** is source of truth for threads, messages, generations. No Create data in `localStorage`.
 
 **LangGraph persistence:** [`@langchain/langgraph-checkpoint-postgres`](https://langchain-ai.github.io/langgraphjs/reference/modules/langgraph-checkpoint-postgres.html) + [`checkpointers` guide](https://docs.langchain.com/oss/javascript/langgraph/checkpointers). Call `setup()` once per deploy. Product threads/messages live in **our** Drizzle tables; graph `thread_id` maps to `assistant_threads.id`.
 
@@ -186,7 +187,7 @@ packages/ai (providers) · packages/agents (LangGraph graphs + tools) — planne
 | S3 presigned uploads, media URLs | ✅     |                                             |
 | Trash                            | ✅     |                                             |
 | Project nav + assets page        | ✅     |                                             |
-| **Create UI (conversational)**   | 🟡     | Assistant UI thread + Zustand persist; mock send until LangGraph API |
+| **Create UI (conversational)**   | 🟡     | Assistant UI + threads + stream; `@` mentions; upload dialog shared with Assets/Library |
 | `@` asset suggest API            | ✅     | `GET .../assets/suggest`                    |
 | Collections UI                   | 🟡     | DB only                                     |
 
@@ -196,14 +197,15 @@ packages/ai (providers) · packages/agents (LangGraph graphs + tools) — planne
 
 | Item                                                    | Status | Notes                                                              |
 | ------------------------------------------------------- | ------ | ------------------------------------------------------------------ |
-| `assistant_threads` / `assistant_messages`              | ⬜     | Replace Create localStorage                                        |
-| `packages/agents` LangGraph + tools                     | ⬜     | `search_assets`, `start_generation`, `get_generation_status`       |
-| OpenAI `gpt-5.4-mini` chat stream + `gpt-5-nano` titles | ⬜     | Via LangGraph or AI SDK-compatible route                           |
-| `packages/ai` Grok Imagine adapter                      | ⬜     | Cheapest image model at ship                                       |
-| `POST /generations` + events                            | ⬜     | Schema exists                                                      |
-| Inngest image worker                                    | ⬜     |                                                                    |
-| `@` asset autocomplete API                              | ✅     | Done                                                               |
-| Assistant UI + Zustand Create store                     | 🟡     | Wired on Create page; LangGraph runtime + library picker next |
+| `assistant_threads` / `assistant_messages`              | ✅     | Create threads + messages API                                      |
+| Assistant stream (NDJSON)                               | 🟡     | OpenAI tools + keepalive pings; harden Inngest/generations         |
+| `packages/agents` LangGraph + tools                     | 🟡     | Tooling in API via `@repo/agents`; full LangGraph checkpointer TBD |
+| OpenAI `gpt-5.4-mini` chat stream + `gpt-5-nano` titles | ✅     | Stream route + thread titles                                       |
+| `packages/ai` Grok Imagine adapter                      | 🟡     | Inngest worker path                                                |
+| Generations API + Inngest                               | 🟡     | Enqueue + status; polish failures/retries                          |
+| `@` asset suggest API                                   | ✅     | `GET .../assets/suggest`                                           |
+| Assistant UI + Zustand Create store                     | 🟡     | External store runtime; staged `@` refs only                       |
+| **`WorkspaceAssetsUploadDialog`**                       | ✅     | Create + Project Assets + Workspace Library                        |
 | Env: `XAI_API_KEY`, `OPENAI_API_KEY`, Inngest           | 🟡     | Keys in `.env.example`; `@repo/env` `aiEnv` / getters; Inngest TBD |
 | Create message body (`@repo/validators/create`)         | ✅     | `createProjectMessageBodySchema`                                   |
 | Postgres LangGraph checkpointer                         | ⬜     | Separate from product message tables                               |
@@ -226,9 +228,10 @@ packages/ai (providers) · packages/agents (LangGraph graphs + tools) — planne
 
 | Route                                                    | Status     |
 | -------------------------------------------------------- | ---------- |
-| `/dashboard/workspaces/[id]/projects/[projectId]/create` | 🟡 UI mock |
-| `/dashboard/workspaces/[id]/projects/[projectId]/assets` | ✅         |
-| Generations API                                          | ⬜         |
+| `/dashboard/workspaces/[id]/projects/[projectId]/create` | 🟡     |
+| `/dashboard/workspaces/[id]/projects/[projectId]/assets` | ✅     |
+| `/dashboard/workspaces/[id]/library`                     | ✅     |
+| Generations API                                          | 🟡     |
 
 ---
 
@@ -237,9 +240,9 @@ packages/ai (providers) · packages/agents (LangGraph graphs + tools) — planne
 | Group                                                | Status |
 | ---------------------------------------------------- | ------ |
 | Auth, me, workspaces, projects, assets, media, trash | ✅     |
-| Assistant threads/messages                           | ⬜     |
-| Assistant stream                                     | ⬜     |
-| Generations                                          | ⬜     |
+| Assistant threads/messages                           | ✅     |
+| Assistant stream                                     | 🟡     |
+| Generations                                          | 🟡     |
 | Asset search (for `@`)                               | ✅     | `GET .../assets/suggest` |
 
 ---
@@ -264,21 +267,26 @@ See `.env.example`. Required for AI slice: `DATABASE_URL`, S3, `OPENAI_API_KEY`,
 
 | Where            | Packages                                                                                                           | Role                                    |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------- |
-| **apps/web**     | `@assistant-ui/react`, `@assistant-ui/react-langgraph`, `@assistant-ui/react-markdown`, `zustand`, `ai`, `@ai-sdk/react`, `remark-gfm` | Create chat (registry under `global/components/assistant-ui/`) |
-| **apps/web**     | `next`, `react`, `@tanstack/react-query`, `@repo/ui`, `@repo/validators`, `better-auth`, `zod`, `sonner`, `motion` | App shell, workspace UI, server state   |
-| **apps/api**     | `hono`, `@hono/zod-openapi`, `@repo/db`, `@repo/auth`, `@repo/storage`, `@repo/validators`, `@repo/env`            | REST API, auth, assets                  |
-| **packages/db**  | `drizzle-orm`, `postgres`                                                                                          | Schema, migrations                      |
-| **packages/env** | (no AI SDK)                                                                                                        | `OPENAI_API_KEY`, `XAI_API_KEY` helpers |
+| **apps/web**     | `@assistant-ui/react`, `@assistant-ui/react-markdown`, `zustand`, `@tanstack/react-query`, …                       | Create chat + workspace UI              |
+| **apps/api**     | `@repo/agents`, `@repo/ai`, `inngest`, OpenAI via agents, …                                                        | Assistant stream, tools, generations    |
+| **packages/agents** | Create chat tools, OpenAI web search                                                                            | `start_generation`, asset tools         |
+| **packages/ai**  | Grok Imagine client                                                                                                | Inngest image steps                     |
+
+### Create frontend (conventions)
+
+| Item | Location / notes |
+| ---- | ---------------- |
+| Runtime | `create-project-runtime-provider.tsx` — external store, stream via Next rewrite to API |
+| `@` mentions | `create-composer-asset-mentions.tsx`; caret from shared textarea ref in `create-composer-caret-context.tsx` |
+| Upload UI | `WorkspaceAssetsUploadDialog` in `features/workspace/components/` |
+| Staged refs | `create-project-store` → `stagedAssets`; send via `resolve-create-send-references.ts` |
 
 ### Planned — frontend (`apps/web`)
 
-| Item                            | Purpose                                                                 |
-| ------------------------------- | ----------------------------------------------------------------------- |
-| `use-create-project-store`      | Zustand in-memory: draft, attachments, active thread per `projectId`    |
-| Create page wire-up             | `AssistantRuntimeProvider`, thread/composer from registry components    |
-| Pralay `AttachmentAdapter`      | Presigned upload + library `addAttachment`; `@` token sync              |
-
-Registry CLI adds **local** `components/assistant-ui/*` (not a separate theme npm).
+| Item | Purpose |
+| ---- | ------- |
+| LangGraph runtime adapter | Optional swap from external store when graph is primary |
+| Edit/variation turns | Extend send contract, not composer uploads |
 
 ### Planned — backend / workers
 
@@ -296,19 +304,21 @@ Registry CLI adds **local** `components/assistant-ui/*` (not a separate theme np
 
 | Package               | Why skip                                               |
 | --------------------- | ------------------------------------------------------ |
-| **AI Elements**       | Chose Assistant UI for LangGraph + attachment adapters |
+| **AI Elements**       | Chose Assistant UI |
+| **Composer uploads**  | Library + `@` only; no AttachmentAdapter on Create |
 | **Vercel AI Gateway** | Direct OpenAI + xAI keys in `@repo/env` for now        |
 
 ---
 
 ## Build order (agents)
 
-1. Validators + migrations (threads, messages).
-2. ~~Asset prefix search for `@`.~~ Done.
-3. Assistant UI scaffold + Zustand Create store + attachment adapter (S3 + library).
-4. Generations API + Inngest + Grok Imagine worker.
-5. `packages/agents`: LangGraph + tools + Postgres checkpointer; wire `useLangGraphRuntime`.
-6. Replace Create mocks with thread/message API + stream.
+1. ~~Validators + migrations (threads, messages).~~ Done.
+2. ~~Asset suggest for `@`.~~ Done.
+3. ~~Assistant UI + Zustand + `@` (no composer uploads).~~ Done.
+4. ~~Shared upload dialog + Assets/Library.~~ Done.
+5. Harden generations + Inngest + stream reliability.
+6. `packages/agents`: LangGraph checkpointer; optional `useLangGraphRuntime`.
+7. Edit/variation flows via new turns/tools (not composer scope creep).
 
 ---
 
@@ -316,8 +326,8 @@ Registry CLI adds **local** `components/assistant-ui/*` (not a separate theme np
 
 | Area                   | Progress |
 | ---------------------- | -------- |
-| Foundation + workspace | ~85%     |
-| Create UX (frontend)   | ~40%     |
-| AI backend             | 0%       |
+| Foundation + workspace | ~90%     |
+| Create UX (frontend)   | ~65%     |
+| AI backend (Create)    | ~55%     |
 
-**Current focus:** Assistant UI + Zustand on Create; then thread DB + LangGraph/Inngest backend.
+**Current focus:** Generations/Inngest reliability, stream hardening, then LangGraph checkpointer.
