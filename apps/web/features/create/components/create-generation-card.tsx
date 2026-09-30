@@ -10,6 +10,7 @@ import { cn } from "@repo/ui/lib/utils";
 
 import { useProjectGeneration } from "@/features/create/hooks/use-project-generation";
 import type { CreateGenerationBlock } from "@/features/create/types/create-ui";
+import { isActiveGenerationStatus } from "@/features/create/utils/map-generation-summary";
 import { workspaceKeys } from "@/features/workspace/utils/query-keys";
 import { getMediaUrl } from "@/global/utils/media-url";
 
@@ -42,7 +43,10 @@ export function CreateGenerationCard({
   generation,
 }: CreateGenerationCardProps) {
   const queryClient = useQueryClient();
-  const live = useProjectGeneration(workspaceId, projectId, generation.id);
+  const shouldPoll = isActiveGenerationStatus(generation.status);
+  const live = useProjectGeneration(workspaceId, projectId, generation.id, {
+    pollWhileActive: shouldPoll,
+  });
 
   const status = (live.data?.generation.status ??
     generation.status) as CreateGenerationBlock["status"];

@@ -2,13 +2,17 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { UploadIcon } from "lucide-react";
 
 import { Button } from "@repo/ui/components/button";
 
-import { WorkspaceAssetsPanel } from "@/features/workspace/components/workspace-assets-panel";
+import { WorkspaceAssetsUploadDialog } from "@/features/workspace/components/workspace-assets-upload-dialog";
+import { WorkspaceAssetsUploadPanels } from "@/features/workspace/components/workspace-assets-upload-panels";
 import { useWorkspaceProject } from "@/features/workspace/hooks/use-workspace-projects";
-import { getProjectBasePath } from "@/features/workspace/utils/project-nav";
-import { getWorkspaceBasePath } from "@/features/workspace/utils/workspace-nav";
+import {
+  projectAssetsUploadDialogPanelProps,
+  projectAssetsUploadPanelProps,
+} from "@/features/workspace/utils/workspace-assets-upload-props";
 
 type ProjectAssetsPageProps = {
   workspaceId: string;
@@ -20,6 +24,7 @@ export function ProjectAssetsPage({
   projectId,
 }: ProjectAssetsPageProps) {
   const [mounted, setMounted] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
   const { data, isLoading, error } = useWorkspaceProject(
     workspaceId,
     projectId,
@@ -53,49 +58,51 @@ export function ProjectAssetsPage({
   }
 
   const projectName = data.project.name;
-  const workspaceBasePath = getWorkspaceBasePath(workspaceId);
+  const inlinePanelProps = projectAssetsUploadPanelProps({
+    workspaceId,
+    projectId,
+    projectName,
+  });
+  const dialogPanelProps = projectAssetsUploadDialogPanelProps({
+    workspaceId,
+    projectId,
+    projectName,
+  });
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-4 py-10 sm:px-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Assets</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Project-specific assets for {projectName}, plus shared workspace
-          references you can reuse across campaigns.
-        </p>
+    <>
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-4 py-10 sm:px-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Assets</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Project-specific assets for {projectName}, plus shared workspace
+              references you can reuse across campaigns.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0 gap-1.5"
+            onClick={() => setUploadOpen(true)}
+          >
+            <UploadIcon className="size-4" />
+            Upload files
+          </Button>
+        </div>
+
+        <WorkspaceAssetsUploadPanels {...inlinePanelProps} />
       </div>
 
-      <WorkspaceAssetsPanel
-        workspaceId={workspaceId}
-        scope="project"
-        projectId={projectId}
-        title={`${projectName} assets`}
-        description="Upload images that belong only to this project: posters, event photos, campaign creatives."
-        emptyMessage="Upload project-specific images here. They won't appear in the shared workspace library."
-        listLabel="This project"
+      <WorkspaceAssetsUploadDialog
+        open={uploadOpen}
+        onOpenChange={setUploadOpen}
+        title="Upload files"
+        description={`Add images for ${projectName} or the shared workspace library.`}
+        showAssetsPageLink
+        {...dialogPanelProps}
       />
-
-      <WorkspaceAssetsPanel
-        workspaceId={workspaceId}
-        scope="workspace"
-        readOnly
-        title="Workspace library"
-        description={
-          <>
-            Shared references for the whole workspace: faces, logos, team photos.
-            Manage uploads in{" "}
-            <Link
-              href={`${workspaceBasePath}/library`}
-              className="font-medium text-primary underline-offset-4 hover:underline"
-            >
-              Library
-            </Link>
-            .
-          </>
-        }
-        emptyMessage="No shared workspace assets yet. Upload universal references from the workspace library."
-        listLabel="Shared workspace assets"
-      />
-    </div>
+    </>
   );
 }

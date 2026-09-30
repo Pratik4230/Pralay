@@ -1,13 +1,18 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useRef, useState, type FC } from "react";
+import { useCallback, useEffect, useRef, useState, type FC } from "react";
 import { useAui, useAuiState } from "@assistant-ui/react";
-import { toast } from "sonner";
 
 import { useCreateAssetSuggest } from "@/features/create/hooks/use-create-asset-suggest";
-import type { CreateAssetOption } from "@/features/create/hooks/use-create-asset-options";
+import type { CreateAssetOption } from "@/features/create/types/create-asset-option";
 import { useCreateProjectStore } from "@/features/create/store/create-project-store";
+import { useCreateComposerCaret } from "@/features/create/components/create-composer-caret-context";
+import {
+  findActiveComposerMention,
+  replaceActiveComposerMention,
+  type ActiveComposerMention,
+} from "@/features/create/utils/create-composer-mention-at-caret";
 import { getMediaUrl } from "@/global/utils/media-url";
 import { cn } from "@repo/ui/lib/utils";
 
@@ -21,11 +26,14 @@ export const CreateComposerAssetMentions: FC<
 > = ({ workspaceId, projectId }) => {
   const aui = useAui();
   const draft = useAuiState((state) => state.composer.text);
+  const { getCaretIndex, subscribeCaret } = useCreateComposerCaret();
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
+  const [caretTick, setCaretTick] = useState(0);
   const listRef = useRef<HTMLUListElement>(null);
   const draftRef = useRef(draft);
+  const activeMentionRef = useRef<ActiveComposerMention | null>(null);
 
   draftRef.current = draft;
 
@@ -39,16 +47,21 @@ export const CreateComposerAssetMentions: FC<
       mentionOpen,
     );
 
+  useEffect(() => subscribeCaret(() => setCaretTick((value) => value + 1)), [
+    subscribeCaret,
+  ]);
+
   useEffect(() => {
-    const match = draft.match(/@([^\s@]*)$/);
-    if (match) {
+    const active = findActiveComposerMention(draft, getCaretIndex());
+    activeMentionRef.current = active;
+    if (active) {
       setMentionOpen(true);
-      setMentionQuery(match[1] ?? "");
+      setMentionQuery(active.query);
     } else {
       setMentionOpen(false);
       setMentionQuery("");
     }
-  }, [draft]);
+  }, [caretTick, draft, getCaretIndex]);
 
   useEffect(() => {
     setActiveIndex(0);
@@ -65,10 +78,10 @@ export const CreateComposerAssetMentions: FC<
   const attachAsset = useCallback(
     async (option: CreateAssetOption) => {
       const currentDraft = draftRef.current;
-      const nextDraft = currentDraft.replace(
-        /@([^\s@]*)$/,
-        `@${option.name} `,
-      );
+      const mention = activeMentionRef.current;
+      const nextDraft = mention
+        ? replaceActiveComposerMention(currentDraft, mention, option.name)
+        : currentDraft.replace(/@([^\s@]*)$/, `@${option.name} `);
       aui.composer.setText(nextDraft);
       setMentionOpen(false);
 
@@ -76,12 +89,6 @@ export const CreateComposerAssetMentions: FC<
         .getState()
         .byProject[projectId]?.stagedAssets.some((item) => item.id === option.id);
       if (alreadyStaged) return;
-
-      const previewUrl = getMediaUrl(option.s3Key);
-      if (!previewUrl) {
-        toast.error("This asset is not ready to preview yet.");
-        return;
-      }
 
       setStagedAssets(projectId, (current) => [
         ...current,
@@ -92,23 +99,6 @@ export const CreateComposerAssetMentions: FC<
           scope: option.scope,
         },
       ]);
-
-      try {
-        await aui.composer.addAttachment({
-          id: option.id,
-          name: option.name,
-          type: "image",
-          contentType: "image/png",
-          content: [{ type: "image", image: previewUrl }],
-        });
-      } catch (error) {
-        useCreateProjectStore.getState().setStagedAssets(projectId, (current) =>
-          current.filter((item) => item.id !== option.id),
-        );
-        toast.error(
-          error instanceof Error ? error.message : "Could not attach this asset.",
-        );
-      }
     },
     [aui, projectId, setStagedAssets],
   );

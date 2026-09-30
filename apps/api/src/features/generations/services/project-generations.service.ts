@@ -105,6 +105,53 @@ export async function mapGenerationWithOutputs(row: GenerationRow) {
   return mapGeneration(row, outputAssets);
 }
 
+export type AssistantMessageGenerationSummary = {
+  id: string;
+  status: GenerationRow["status"];
+  prompt: string;
+  errorMessage: string | null;
+  outputAssets: OutputAssetPreview[];
+};
+
+/** Batch load generation summaries for assistant thread messages. */
+export async function loadAssistantMessageGenerationSummaries(
+  generationIds: string[],
+): Promise<Map<string, AssistantMessageGenerationSummary>> {
+  const uniqueIds = [...new Set(generationIds.filter(Boolean))];
+  if (uniqueIds.length === 0) {
+    return new Map();
+  }
+
+  const rows = await db
+    .select()
+    .from(generations)
+    .where(
+      and(inArray(generations.id, uniqueIds), isNull(generations.deletedAt)),
+    );
+
+  const allOutputIds = rows.flatMap((row) => row.outputAssetIds);
+  const previewRows = await loadOutputAssetPreviews(allOutputIds);
+  const previewById = new Map(previewRows.map((row) => [row.id, row]));
+
+  const result = new Map<string, AssistantMessageGenerationSummary>();
+
+  for (const row of rows) {
+    const outputAssets = row.outputAssetIds
+      .map((id) => previewById.get(id))
+      .filter((asset): asset is OutputAssetPreview => Boolean(asset));
+
+    result.set(row.id, {
+      id: row.id,
+      status: row.status,
+      prompt: row.prompt,
+      errorMessage: row.errorMessage,
+      outputAssets,
+    });
+  }
+
+  return result;
+}
+
 async function assertInputAssets(
   workspaceId: string,
   projectId: string,

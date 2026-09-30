@@ -12,7 +12,8 @@ export const CreateThreadWelcome: FC = () => {
         What will you create today?
       </p>
       <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">
-        Describe your idea and use @ to attach assets from your library.
+        Describe your idea and use @ to reference assets from your library. Upload
+        new files with the folder button below.
       </p>
     </div>
   );

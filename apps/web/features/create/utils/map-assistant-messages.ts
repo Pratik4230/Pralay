@@ -7,6 +7,9 @@ import type {
   CreateThreadMessage,
 } from "@/features/create/types/create-ui";
 import { findCachedWorkspaceAsset } from "@/features/create/utils/find-cached-workspace-asset";
+import {
+  mapGenerationSummaryToCreateBlock,
+} from "@/features/create/utils/map-generation-summary";
 
 function mapReferenceAssets(
   queryClient: QueryClient,
@@ -57,15 +60,22 @@ export function mapAssistantMessageToCreateMessage(
         )
       : undefined;
 
-  const generation =
-    message.generationId && message.role === "user"
-      ? {
-          id: message.generationId,
-          status: "queued" as const,
-          prompt: message.content,
-          referenceNames: attachments?.map((asset) => asset.name) ?? [],
-        }
-      : undefined;
+  const referenceNames = attachments?.map((asset) => asset.name) ?? [];
+
+  let generation: CreateThreadMessage["generation"];
+  if (message.role === "user" && message.generation) {
+    generation = mapGenerationSummaryToCreateBlock(
+      message.generation,
+      referenceNames,
+    );
+  } else if (message.role === "user" && message.generationId) {
+    generation = {
+      id: message.generationId,
+      status: "queued",
+      prompt: message.content,
+      referenceNames,
+    };
+  }
 
   return {
     id: message.id,

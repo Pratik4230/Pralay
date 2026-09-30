@@ -33,7 +33,7 @@ export const CreateComposerSessionRestore: FC<
 
     if (restoringRef.current) return;
     restoringRef.current = true;
-    void restoreComposerLibraryAttachments(workspaceId, projectId, aui).finally(
+    void restoreComposerLibraryAttachments(workspaceId, projectId).finally(
       () => {
         restoringRef.current = false;
       },

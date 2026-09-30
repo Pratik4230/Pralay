@@ -54,12 +54,4 @@ export type CreateThread = {
 export type CreateSessionState = {
   draft: string;
   chatModelId: CreateChatModelId;
-  referenceAssetIds: string[];
-};
-
-export type CreateRecentItem = {
-  id: string;
-  title: string;
-  updatedAt: string;
-  status: CreateGenerationUiStatus;
 };

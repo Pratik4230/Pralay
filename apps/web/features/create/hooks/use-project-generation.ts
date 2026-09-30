@@ -16,7 +16,10 @@ export function useProjectGeneration(
   workspaceId: string,
   projectId: string,
   generationId: string | null | undefined,
+  options?: { pollWhileActive?: boolean },
 ) {
+  const pollWhileActive = options?.pollWhileActive ?? true;
+
   return useQuery({
     queryKey: createKeys.generation(
       workspaceId,
@@ -25,7 +28,11 @@ export function useProjectGeneration(
     ),
     queryFn: () =>
       fetchProjectGeneration(workspaceId, projectId, generationId!),
-    enabled: Boolean(workspaceId) && Boolean(projectId) && Boolean(generationId),
+    enabled:
+      pollWhileActive &&
+      Boolean(workspaceId) &&
+      Boolean(projectId) &&
+      Boolean(generationId),
     refetchInterval: (query) => {
       const status = query.state.data?.generation.status;
       if (!status || !isGenerationActive(status)) {

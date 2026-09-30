@@ -4,9 +4,7 @@ import { useEffect, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import type {
-  CreateAttachedAsset,
   CreateChatModelId,
-  CreateRecentItem,
   CreateSessionState,
   CreateThread,
 } from "@/features/create/types/create-ui";
@@ -30,9 +28,6 @@ export function useProjectCreateUi(workspaceId: string, projectId: string) {
   const selectThread = useCreateProjectStore((state) => state.selectThread);
   const setDraft = useCreateProjectStore((state) => state.setDraft);
   const setChatModel = useCreateProjectStore((state) => state.setChatModel);
-  const toggleReferenceAsset = useCreateProjectStore(
-    (state) => state.toggleReferenceAsset,
-  );
 
   const threadsQuery = useProjectAssistantThreads(workspaceId, projectId);
 
@@ -62,10 +57,6 @@ export function useProjectCreateUi(workspaceId: string, projectId: string) {
     return threads.find((thread) => thread.id === activeThreadId) ?? null;
   }, [threads, activeThreadId]);
 
-  const recentCreations = useMemo((): CreateRecentItem[] => {
-    return [];
-  }, []);
-
   const updateSession = (patch: Partial<CreateSessionState>) => {
     if (patch.draft !== undefined) {
       setDraft(projectId, patch.draft);
@@ -82,11 +73,8 @@ export function useProjectCreateUi(workspaceId: string, projectId: string) {
     activeThread,
     activeThreadId,
     session,
-    recentCreations,
     createThread: () => startNewChat(projectId),
     selectThread: (threadId: string) => selectThread(projectId, threadId),
-    toggleReferenceAsset: (assetId: string) =>
-      toggleReferenceAsset(projectId, assetId),
     setDraft: (draft: string) => setDraft(projectId, draft),
     setChatModel: (chatModelId: CreateChatModelId) =>
       setChatModel(projectId, chatModelId),

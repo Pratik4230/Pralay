@@ -5,6 +5,7 @@ import {
   createProjectMessageBodySchema,
   createReferenceAssetIdsSchema,
 } from "../create/create.js";
+import { assistantMessageGenerationSummarySchema } from "../generation/generation.js";
 
 export const assistantMessageRoleSchema = z.enum([
   "user",
@@ -32,6 +33,7 @@ export const assistantMessageSchema = z.object({
   content: z.string(),
   referenceAssetIds: createReferenceAssetIdsSchema,
   generationId: z.uuid().nullable(),
+  generation: assistantMessageGenerationSummarySchema.nullable().optional(),
   createdAt: z.string(),
 });
 
@@ -124,10 +126,15 @@ export const assistantMessageStreamGenerationEventSchema = z.object({
   userMessage: assistantMessageSchema,
 });
 
+export const assistantMessageStreamPingEventSchema = z.object({
+  type: z.literal("ping"),
+});
+
 export const assistantMessageStreamEventSchema = z.discriminatedUnion("type", [
   assistantMessageStreamMetaEventSchema,
   assistantMessageStreamGenerationEventSchema,
   assistantMessageStreamTextEventSchema,
   assistantMessageStreamDoneEventSchema,
   assistantMessageStreamErrorEventSchema,
+  assistantMessageStreamPingEventSchema,
 ]);

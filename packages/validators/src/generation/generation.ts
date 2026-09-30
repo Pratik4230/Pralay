@@ -31,6 +31,19 @@ export const generationOutputAssetPreviewSchema = z.object({
   mimeType: z.string(),
 });
 
+/** Embedded on assistant list-messages for Create generation cards (no extra GET on reload). */
+export const assistantMessageGenerationSummarySchema = z.object({
+  id: z.uuid(),
+  status: generationStatusSchema,
+  prompt: z.string(),
+  errorMessage: z.string().nullable(),
+  outputAssets: z.array(generationOutputAssetPreviewSchema).default([]),
+});
+
+export type AssistantMessageGenerationSummary = z.infer<
+  typeof assistantMessageGenerationSummarySchema
+>;
+
 export const generationSchema = z.object({
   id: z.uuid(),
   workspaceId: z.uuid(),

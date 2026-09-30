@@ -3,6 +3,7 @@ import { and, desc, eq, lt, or } from "drizzle-orm";
 import { db } from "@repo/db";
 import { assistantMessages, assistantThreads } from "@repo/db/schema";
 import type {
+  AssistantMessageGenerationSummary,
   CreateProjectAssistantThreadBody,
   ListProjectAssistantMessagesQuery,
   SendProjectAssistantMessageBody,
@@ -23,6 +24,7 @@ import { completeAssistantTurn } from "./create-assistant-stream.service.js";
 import { generateCreateAssistantReply } from "./create-assistant-ai.service.js";
 import {
   attachGenerationToAssistantUserMessage,
+  loadAssistantMessageGenerationSummaries,
   StorageNotConfiguredError,
 } from "../../generations/services/project-generations.service.js";
 
@@ -53,7 +55,10 @@ export function mapThread(row: ThreadRow) {
   };
 }
 
-export function mapMessage(row: MessageRow) {
+export function mapMessage(
+  row: MessageRow,
+  generation?: AssistantMessageGenerationSummary | null,
+) {
   return {
     id: row.id,
     threadId: row.threadId,
@@ -61,6 +66,7 @@ export function mapMessage(row: MessageRow) {
     content: row.content,
     referenceAssetIds: row.referenceAssetIds,
     generationId: row.generationId,
+    ...(generation !== undefined ? { generation } : {}),
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -190,6 +196,13 @@ export async function listProjectAssistantMessages(
   const page = hasMore ? rows.slice(0, query.limit) : rows;
   const chronological = [...page].reverse();
 
+  const generationIds = chronological
+    .map((row) => row.generationId)
+    .filter((id): id is string => Boolean(id));
+
+  const generationById =
+    await loadAssistantMessageGenerationSummaries(generationIds);
+
   let nextCursor: string | null = null;
   if (hasMore) {
     const oldestInPage = page[page.length - 1]!;
@@ -200,7 +213,14 @@ export async function listProjectAssistantMessages(
   }
 
   return {
-    messages: chronological.map(mapMessage),
+    messages: chronological.map((row) =>
+      mapMessage(
+        row,
+        row.generationId
+          ? (generationById.get(row.generationId) ?? null)
+          : null,
+      ),
+    ),
     nextCursor,
   };
 }

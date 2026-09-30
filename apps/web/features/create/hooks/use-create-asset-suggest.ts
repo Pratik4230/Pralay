@@ -6,7 +6,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { CreateAssetSuggestItem } from "@repo/validators";
 
 import { CREATE_ASSET_SUGGEST_DEBOUNCE_MS } from "@/features/create/constants/create-timing";
-import type { CreateAssetOption } from "@/features/create/hooks/use-create-asset-options";
+import type { CreateAssetOption } from "@/features/create/types/create-asset-option";
 import { fetchCreateAssetSuggest } from "@/features/create/utils/fetch-create-asset-suggest";
 import { workspaceKeys } from "@/features/workspace/utils/query-keys";
 

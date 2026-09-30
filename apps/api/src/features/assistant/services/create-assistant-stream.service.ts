@@ -39,7 +39,8 @@ export type AssistantMessageStreamEvent =
       thread: ReturnType<typeof mapThread>;
       assistantMessage: ReturnType<typeof mapMessage>;
     }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "ping" };
 
 function encodeStreamEvent(event: AssistantMessageStreamEvent): Uint8Array {
   return new TextEncoder().encode(`${JSON.stringify(event)}\n`);
@@ -113,6 +114,39 @@ function buildChatContext(
     },
     onGenerationLinked,
   };
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+const STREAM_KEEPALIVE_MS = 12_000;
+
+/** Emit `{ type: "ping" }` while waiting on long tool loops (keeps HTTP chunk stream alive). */
+async function* withStreamKeepalive(
+  source: AsyncIterable<string>,
+): AsyncGenerator<string | { type: "ping" }> {
+  const iterator = source[Symbol.asyncIterator]();
+  let pending = iterator.next();
+
+  while (true) {
+    const raced = await Promise.race([
+      pending.then((result) => ({ kind: "item" as const, result })),
+      sleep(STREAM_KEEPALIVE_MS).then(() => ({ kind: "ping" as const })),
+    ]);
+
+    if (raced.kind === "ping") {
+      yield { type: "ping" };
+      continue;
+    }
+
+    const { value, done } = raced.result;
+    if (done) break;
+    yield value;
+    pending = iterator.next();
+  }
 }
 
 function* drainSideChannel(
@@ -200,13 +234,16 @@ export async function* iterateProjectAssistantMessageStream(
     };
 
     let assistantContent = "";
-    for await (const delta of streamCreateAssistantReply(
-      turnInput,
-      chatContext,
+    for await (const chunk of withStreamKeepalive(
+      streamCreateAssistantReply(turnInput, chatContext),
     )) {
       yield* drainSideChannel(sideChannel);
-      assistantContent += delta;
-      yield { type: "text", delta };
+      if (typeof chunk === "string") {
+        assistantContent += chunk;
+        yield { type: "text", delta: chunk };
+      } else {
+        yield chunk;
+      }
     }
 
     yield* drainSideChannel(sideChannel);
@@ -244,22 +281,36 @@ export async function* iterateProjectAssistantMessageStream(
   }
 }
 
-/** Byte stream for `new Response(...)` (works on Bun; avoids controller enqueue bugs). */
+/** NDJSON byte stream with explicit close (Bun + browser friendly). */
 export function createProjectAssistantMessageStream(
   actorUserId: string,
   workspaceId: string,
   projectId: string,
   body: SendProjectAssistantMessageBody,
-): AsyncGenerator<Uint8Array> {
-  async function* encodeNdjson() {
-    for await (const event of iterateProjectAssistantMessageStream(
-      actorUserId,
-      workspaceId,
-      projectId,
-      body,
-    )) {
-      yield encodeStreamEvent(event);
-    }
-  }
-  return encodeNdjson();
+): ReadableStream<Uint8Array> {
+  const events = iterateProjectAssistantMessageStream(
+    actorUserId,
+    workspaceId,
+    projectId,
+    body,
+  );
+  const iterator = events[Symbol.asyncIterator]();
+
+  return new ReadableStream({
+    async pull(controller) {
+      try {
+        const { value, done } = await iterator.next();
+        if (done) {
+          controller.close();
+          return;
+        }
+        controller.enqueue(encodeStreamEvent(value));
+      } catch (error) {
+        controller.error(error);
+      }
+    },
+    cancel() {
+      // Best-effort abort; generator may still finish the HTTP handler.
+    },
+  });
 }

@@ -204,11 +204,11 @@ export async function streamProjectAssistantMessageController(
       body,
     );
 
-    return new Response(stream, {
+    return c.newResponse(stream, {
       headers: {
         "Content-Type": "application/x-ndjson; charset=utf-8",
         "Cache-Control": "no-cache, no-transform",
-        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
       },
     });
   } catch (error) {

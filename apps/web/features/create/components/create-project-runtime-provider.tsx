@@ -10,7 +10,6 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import type { AssistantMessage } from "@repo/validators";
 
-import { createPralayWorkspaceAttachmentAdapter } from "@/features/create/adapters/pralay-workspace-attachment-adapter";
 import { CreateComposerSessionRestore } from "@/features/create/components/create-composer-session-restore";
 import { CreateComposerSendCleanup } from "@/features/create/components/create-composer-send-cleanup";
 import { CreateGenerationsProvider } from "@/features/create/components/create-generations-context";
@@ -19,7 +18,7 @@ import { useCreateProjectStore } from "@/features/create/store/create-project-st
 import { convertCreateThreadMessage } from "@/features/create/utils/convert-create-thread-message";
 import type { CreateAttachedAsset, CreateThreadMessage } from "@/features/create/types/create-ui";
 import { mapAssistantMessagesToCreateMessages } from "@/features/create/utils/map-assistant-messages";
-import { mergeCreateSendAttachments } from "@/features/create/utils/merge-create-send-attachments";
+import { resolveCreateSendReferenceAssets } from "@/features/create/utils/resolve-create-send-references";
 import { createKeys } from "@/features/create/utils/query-keys";
 import { streamProjectAssistantMessage } from "@/features/create/utils/stream-project-assistant";
 
@@ -53,6 +52,8 @@ export function CreateProjectRuntimeProvider({
   const queryClient = useQueryClient();
   const abortRef = useRef<AbortController | null>(null);
   const composerCleanupRef = useRef<(() => Promise<void>) | null>(null);
+  const streamAssistantTextRef = useRef("");
+  const streamFlushRef = useRef<number | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [streamState, setStreamState] = useState<ActiveStreamState | null>(
     null,
@@ -139,10 +140,32 @@ export function CreateProjectRuntimeProvider({
     return map;
   }, [messages]);
 
-  const attachmentAdapter = useMemo(
-    () => createPralayWorkspaceAttachmentAdapter(workspaceId, projectId),
-    [workspaceId, projectId],
+  const flushStreamingAssistantText = useCallback(() => {
+    streamFlushRef.current = null;
+    const content = streamAssistantTextRef.current;
+    setStreamState((current) =>
+      current ? { ...current, assistantContent: content } : current,
+    );
+  }, []);
+
+  const scheduleStreamingAssistantText = useCallback(
+    (fullText: string) => {
+      streamAssistantTextRef.current = fullText;
+      if (streamFlushRef.current !== null) return;
+      streamFlushRef.current = window.requestAnimationFrame(
+        flushStreamingAssistantText,
+      );
+    },
+    [flushStreamingAssistantText],
   );
+
+  useEffect(() => {
+    return () => {
+      if (streamFlushRef.current !== null) {
+        window.cancelAnimationFrame(streamFlushRef.current);
+      }
+    };
+  }, []);
 
   const onNew = useCallback(
     async (message: AppendMessage) => {
@@ -150,9 +173,9 @@ export function CreateProjectRuntimeProvider({
       const staged =
         useCreateProjectStore.getState().byProject[projectId]?.stagedAssets ??
         [];
-      const libraryAssets = mergeCreateSendAttachments(staged, message);
-
       const trimmed = text.trim();
+      const libraryAssets = resolveCreateSendReferenceAssets(staged, trimmed);
+
       if (!trimmed && libraryAssets.length === 0) return;
 
       const prompt =
@@ -164,9 +187,10 @@ export function CreateProjectRuntimeProvider({
       const controller = new AbortController();
       abortRef.current = controller;
       setIsRunning(true);
+      streamAssistantTextRef.current = "";
 
       try {
-        await streamProjectAssistantMessage(
+        const streamResult = await streamProjectAssistantMessage(
           workspaceId,
           projectId,
           {
@@ -197,11 +221,7 @@ export function CreateProjectRuntimeProvider({
               );
             },
             onTextDelta: (_delta, fullText) => {
-              setStreamState((current) =>
-                current
-                  ? { ...current, assistantContent: fullText }
-                  : current,
-              );
+              scheduleStreamingAssistantText(fullText);
             },
             onDone: (event) => {
               setStreamState(null);
@@ -222,17 +242,48 @@ export function CreateProjectRuntimeProvider({
           },
         );
 
+        if (!streamResult.completed && streamResult.threadId) {
+          setStreamState(null);
+          void queryClient.invalidateQueries({
+            queryKey: createKeys.assistantThreads(workspaceId, projectId),
+          });
+          void queryClient.invalidateQueries({
+            queryKey: createKeys.assistantMessages(
+              workspaceId,
+              projectId,
+              streamResult.threadId,
+            ),
+          });
+        }
+
         useCreateProjectStore.getState().setDraft(projectId, "");
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
           setStreamState(null);
+          return;
+        }
+
+        const threadId =
+          useCreateProjectStore.getState().byProject[projectId]?.activeThreadId;
+        setStreamState(null);
+        if (threadId) {
+          void queryClient.invalidateQueries({
+            queryKey: createKeys.assistantThreads(workspaceId, projectId),
+          });
+          void queryClient.invalidateQueries({
+            queryKey: createKeys.assistantMessages(
+              workspaceId,
+              projectId,
+              threadId,
+            ),
+          });
         }
       } finally {
         setIsRunning(false);
         await composerCleanupRef.current?.().catch(() => undefined);
       }
     },
-    [projectId, queryClient, workspaceId],
+    [projectId, queryClient, scheduleStreamingAssistantText, workspaceId],
   );
 
   const onCancel = useCallback(async () => {
@@ -248,9 +299,6 @@ export function CreateProjectRuntimeProvider({
     convertMessage: convertCreateThreadMessage,
     onNew,
     onCancel,
-    adapters: {
-      attachments: attachmentAdapter,
-    },
   });
 
   return (

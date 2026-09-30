@@ -24,12 +24,55 @@ export type StreamProjectAssistantHandlers = {
   signal?: AbortSignal;
 };
 
+export type StreamProjectAssistantResult = {
+  completed: boolean;
+  threadId?: string;
+};
+
+function processStreamLine(
+  line: string,
+  handlers: StreamProjectAssistantHandlers,
+  fullTextRef: { value: string },
+  threadIdRef: { value?: string },
+): boolean {
+  if (!line.trim()) return false;
+
+  const parsed = assistantMessageStreamEventSchema.safeParse(JSON.parse(line));
+  if (!parsed.success) return false;
+
+  if (parsed.data.type === "ping") {
+    return false;
+  }
+
+  switch (parsed.data.type) {
+    case "meta":
+      threadIdRef.value = parsed.data.thread.id;
+      handlers.onMeta(parsed.data);
+      break;
+    case "generation":
+      handlers.onGeneration?.(parsed.data);
+      break;
+    case "text":
+      fullTextRef.value += parsed.data.delta;
+      handlers.onTextDelta(parsed.data.delta, fullTextRef.value);
+      break;
+    case "done":
+      threadIdRef.value = parsed.data.thread.id;
+      handlers.onDone(parsed.data);
+      return true;
+    case "error":
+      handlers.onError(parsed.data.message);
+      break;
+  }
+  return false;
+}
+
 export async function streamProjectAssistantMessage(
   workspaceId: string,
   projectId: string,
   body: SendProjectAssistantMessageBodyInput,
   handlers: StreamProjectAssistantHandlers,
-) {
+): Promise<StreamProjectAssistantResult> {
   const response = await fetch(
     `${env.appUrl}/api/v1/workspaces/${workspaceId}/projects/${projectId}/assistant/messages/stream`,
     {
@@ -58,41 +101,40 @@ export async function streamProjectAssistantMessage(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  let fullText = "";
+  const fullTextRef = { value: "" };
+  let completed = false;
+  const threadIdRef: { value?: string } = {};
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  const handleLine = (line: string) => {
+    if (processStreamLine(line, handlers, fullTextRef, threadIdRef)) {
+      completed = true;
+    }
+  };
 
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      const parsed = assistantMessageStreamEventSchema.safeParse(
-        JSON.parse(line),
-      );
-      if (!parsed.success) continue;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
 
-      switch (parsed.data.type) {
-        case "meta":
-          handlers.onMeta(parsed.data);
-          break;
-        case "generation":
-          handlers.onGeneration?.(parsed.data);
-          break;
-        case "text":
-          fullText += parsed.data.delta;
-          handlers.onTextDelta(parsed.data.delta, fullText);
-          break;
-        case "done":
-          handlers.onDone(parsed.data);
-          break;
-        case "error":
-          handlers.onError(parsed.data.message);
-          break;
+      for (const line of lines) {
+        handleLine(line);
       }
     }
+
+    buffer += decoder.decode();
+    if (buffer.trim()) {
+      handleLine(buffer);
+    }
+  } catch (error) {
+    if (handlers.signal?.aborted) {
+      throw error;
+    }
+    return { completed, threadId: threadIdRef.value };
   }
+
+  return { completed, threadId: threadIdRef.value };
 }

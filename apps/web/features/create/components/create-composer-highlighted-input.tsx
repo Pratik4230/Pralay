@@ -1,7 +1,9 @@
 "use client";
 
+import { useCallback, useLayoutEffect, useRef } from "react";
 import { ComposerPrimitive, useAuiState } from "@assistant-ui/react";
 
+import { useCreateComposerCaret } from "@/features/create/components/create-composer-caret-context";
 import { CreateComposerMentionHighlight } from "@/features/create/components/create-composer-mention-highlight";
 import { cn } from "@repo/ui/lib/utils";
 
@@ -19,6 +21,37 @@ export function CreateComposerHighlightedInput({
   autoFocus,
 }: CreateComposerHighlightedInputProps) {
   const text = useAuiState((state) => state.composer.text);
+  const { setCaretIndex } = useCreateComposerCaret();
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const pendingSelectionRef = useRef<{ start: number; end: number } | null>(
+    null,
+  );
+
+  const syncCaret = useCallback(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? start;
+    pendingSelectionRef.current = { start, end };
+    setCaretIndex(start);
+  }, [setCaretIndex]);
+
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    const pending = pendingSelectionRef.current;
+    if (!el || !pending) return;
+    if (
+      el.selectionStart === pending.start &&
+      el.selectionEnd === pending.end
+    ) {
+      return;
+    }
+    try {
+      el.setSelectionRange(pending.start, pending.end);
+    } catch {
+      // Input may not be focusable during unmount.
+    }
+  }, [text]);
 
   return (
     <div className="relative w-full">
@@ -33,6 +66,7 @@ export function CreateComposerHighlightedInput({
         <CreateComposerMentionHighlight text={text} />
       </div>
       <ComposerPrimitive.Input
+        ref={inputRef}
         placeholder="Send a message..."
         className={cn(
           composerInputLayout,
@@ -44,6 +78,10 @@ export function CreateComposerHighlightedInput({
         enterKeyHint="send"
         aria-label="Message input"
         spellCheck={false}
+        onSelect={syncCaret}
+        onClick={syncCaret}
+        onKeyUp={syncCaret}
+        onInput={syncCaret}
       />
     </div>
   );

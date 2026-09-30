@@ -1,9 +1,5 @@
-import type { AssistantClient } from "@assistant-ui/react";
-
 import { useCreateProjectStore } from "@/features/create/store/create-project-store";
-import type { CreateAttachedAsset } from "@/features/create/types/create-ui";
 import { fetchCreateAssetSuggest } from "@/features/create/utils/fetch-create-asset-suggest";
-import { getMediaUrl } from "@/global/utils/media-url";
 
 export function parseAssetMentionNames(text: string): string[] {
   const names: string[] = [];
@@ -16,32 +12,12 @@ export function parseAssetMentionNames(text: string): string[] {
   return names;
 }
 
-async function addLibraryAttachmentToComposer(
-  aui: AssistantClient,
-  asset: CreateAttachedAsset,
-) {
-  const previewUrl = getMediaUrl(asset.s3Key);
-  if (!previewUrl) return;
-
-  const existing = aui.composer.getState().attachments;
-  if (existing.some((item) => item.id === asset.id)) return;
-
-  await aui.composer.addAttachment({
-    id: asset.id,
-    name: asset.name,
-    type: "image",
-    contentType: "image/png",
-    content: [{ type: "image", image: previewUrl }],
-  });
-}
-
 /**
- * After navigation back to Create, rebuild composer tiles from Zustand + `@` tokens in draft.
+ * After navigation back to Create, rebuild staged `@` refs from the saved draft (no composer tiles).
  */
 export async function restoreComposerLibraryAttachments(
   workspaceId: string,
   projectId: string,
-  aui: AssistantClient,
 ) {
   const store = useCreateProjectStore.getState();
   store.ensureProject(projectId);
@@ -83,13 +59,5 @@ export async function restoreComposerLibraryAttachments(
 
   if (staged.length !== slice.stagedAssets.length) {
     store.setStagedAssets(projectId, () => staged);
-  }
-
-  for (const asset of staged) {
-    try {
-      await addLibraryAttachmentToComposer(aui, asset);
-    } catch {
-      // skip assets that fail adapter validation
-    }
   }
 }
