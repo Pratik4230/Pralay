@@ -7,7 +7,6 @@ import { eq, sql } from "drizzle-orm";
 import {
   generateCreateAssistantReply,
   maybeGenerateCreateThreadTitle,
-  streamCreateAssistantReply,
   type CreateAssistantChatContext,
 } from "./create-assistant-ai.service.js";
 import { loadCreateChatHistory } from "./create-chat-context.js";
@@ -116,51 +115,18 @@ function buildChatContext(
   };
 }
 
-function sleep(ms: number) {
-  return new Promise<void>((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
-
-const STREAM_KEEPALIVE_MS = 12_000;
-
-/** Emit `{ type: "ping" }` while waiting on long tool loops (keeps HTTP chunk stream alive). */
-async function* withStreamKeepalive(
-  source: AsyncIterable<string>,
-): AsyncGenerator<string | { type: "ping" }> {
-  const iterator = source[Symbol.asyncIterator]();
-  let pending = iterator.next();
-
-  while (true) {
-    const raced = await Promise.race([
-      pending.then((result) => ({ kind: "item" as const, result })),
-      sleep(STREAM_KEEPALIVE_MS).then(() => ({ kind: "ping" as const })),
-    ]);
-
-    if (raced.kind === "ping") {
-      yield { type: "ping" };
-      continue;
-    }
-
-    const { value, done } = raced.result;
-    if (done) break;
-    yield value;
-    pending = iterator.next();
-  }
-}
-
-function* drainSideChannel(
-  sideChannel: AssistantMessageStreamEvent[],
-): Generator<AssistantMessageStreamEvent> {
-  while (sideChannel.length > 0) {
-    const event = sideChannel.shift();
-    if (event) yield event;
-  }
-}
-
 /**
- * NDJSON assistant turn events. Uses AsyncGenerator + Response (Bun-safe);
- * avoid ReadableStreamDefaultController.enqueue after long async tool loops.
+ * NDJSON assistant turn events.
+ *
+ * Architecture: all slow work (agent tool loop, DB writes, title generation)
+ * runs server-side to completion BEFORE any text is streamed to the client.
+ * The HTTP stream is open for under ~2 s in all cases, which prevents
+ * ERR_INCOMPLETE_CHUNKED_ENCODING from proxy / load-balancer timeouts.
+ *
+ * Flow:
+ *   meta  →  [generation?]  →  text chunks (fast)  →  done
+ *
+ * Generation status is polled independently by the client via React Query.
  */
 export async function* iterateProjectAssistantMessageStream(
   actorUserId: string,
@@ -168,9 +134,8 @@ export async function* iterateProjectAssistantMessageStream(
   projectId: string,
   body: SendProjectAssistantMessageBody,
 ): AsyncGenerator<AssistantMessageStreamEvent> {
-  const sideChannel: AssistantMessageStreamEvent[] = [];
-
   try {
+    // ── 1. Persist user message ──────────────────────────────────────────────
     const persisted = await persistProjectAssistantUserMessage(
       actorUserId,
       workspaceId,
@@ -181,6 +146,7 @@ export async function* iterateProjectAssistantMessageStream(
     let { threadRow, userMessageRow } = persisted;
     const userMessageRef = { row: userMessageRow };
 
+    // Optional bypass: caller already decided to enqueue a generation directly.
     if (body.enqueueGeneration) {
       try {
         const linked = await attachGenerationToAssistantUserMessage({
@@ -201,16 +167,23 @@ export async function* iterateProjectAssistantMessageStream(
       }
     }
 
+    // ── 2. Emit meta so client knows the threadId immediately ────────────────
     yield {
       type: "meta",
       thread: mapThread(threadRow),
       userMessage: mapMessage(userMessageRow),
     };
 
+    // ── 3. Run the full agent turn synchronously (all tool calls complete) ───
+    //    runCreateChatTurn handles tool loops including startGeneration.
+    //    Any generation is enqueued to Inngest before we stream a single byte.
     const history = await loadCreateChatHistory(threadRow.id, {
       id: userMessageRow.id,
       createdAt: userMessageRow.createdAt,
     });
+
+    let generationLinkedUserMessage: ReturnType<typeof mapMessage> | null =
+      null;
 
     const chatContext = buildChatContext(
       actorUserId,
@@ -219,7 +192,7 @@ export async function* iterateProjectAssistantMessageStream(
       body,
       userMessageRef,
       (userMessage) => {
-        sideChannel.push({ type: "generation", userMessage });
+        generationLinkedUserMessage = userMessage;
       },
     );
 
@@ -233,29 +206,25 @@ export async function* iterateProjectAssistantMessageStream(
       referenceAssetIds: body.referenceAssetIds,
     };
 
-    let assistantContent = "";
-    for await (const chunk of withStreamKeepalive(
-      streamCreateAssistantReply(turnInput, chatContext),
-    )) {
-      yield* drainSideChannel(sideChannel);
-      if (typeof chunk === "string") {
-        assistantContent += chunk;
-        yield { type: "text", delta: chunk };
-      } else {
-        yield chunk;
-      }
+    // Full agent turn — tool calls (searchAssets, startGeneration, etc.) run
+    // to completion here. No HTTP bytes written to the client yet.
+    const assistantContent = await generateCreateAssistantReply(
+      turnInput,
+      chatContext,
+    );
+
+    // ── 4. Emit generation event if startGeneration was called ───────────────
+    if (generationLinkedUserMessage) {
+      yield { type: "generation", userMessage: generationLinkedUserMessage };
     }
 
-    yield* drainSideChannel(sideChannel);
-
-    assistantContent = assistantContent.trim();
-    if (!assistantContent) {
-      assistantContent = await generateCreateAssistantReply(
-        turnInput,
-        chatContext,
-      );
+    // ── 5. Stream the final text in small chunks (fast, < 1 s) ───────────────
+    const chunkSize = 48;
+    for (let i = 0; i < assistantContent.length; i += chunkSize) {
+      yield { type: "text", delta: assistantContent.slice(i, i + chunkSize) };
     }
 
+    // ── 6. Persist assistant message + optionally update thread title ─────────
     const completed = await completeAssistantTurn({
       threadRow,
       userMessageRow: userMessageRef.row,
@@ -310,7 +279,7 @@ export function createProjectAssistantMessageStream(
       }
     },
     cancel() {
-      // Best-effort abort; generator may still finish the HTTP handler.
+      // Best-effort abort; generator cleanup handled by GC.
     },
   });
 }

@@ -26,6 +26,10 @@ export function useProjectAssistantMessages(
   workspaceId: string,
   projectId: string,
   threadId: string | null,
+  options?: {
+    /** Poll interval in ms while waiting for a reply. Pass `false` to disable. */
+    refetchInterval?: number | false;
+  },
 ) {
   return useQuery({
     queryKey: createKeys.assistantMessages(
@@ -36,6 +40,7 @@ export function useProjectAssistantMessages(
     queryFn: () =>
       fetchProjectAssistantMessages(workspaceId, projectId, threadId!),
     enabled: Boolean(workspaceId) && Boolean(projectId) && Boolean(threadId),
+    refetchInterval: options?.refetchInterval ?? false,
   });
 }
 

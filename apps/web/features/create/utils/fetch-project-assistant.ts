@@ -7,6 +7,7 @@ import {
   listProjectAssistantMessagesResponseSchema,
   listProjectAssistantThreadsResponseSchema,
   sendProjectAssistantMessageResponseSchema,
+  submitProjectAssistantMessageResponseSchema,
 } from "@repo/validators";
 
 import { fetchApiClient } from "@/global/utils/api-client";
@@ -36,6 +37,7 @@ export function fetchProjectAssistantMessages(
   ).then((data) => listProjectAssistantMessagesResponseSchema.parse(data));
 }
 
+/** Synchronous send — waits for the full agent turn and returns both messages. */
 export function sendProjectAssistantMessage(
   workspaceId: string,
   projectId: string,
@@ -48,6 +50,25 @@ export function sendProjectAssistantMessage(
       body: JSON.stringify(body),
     },
   ).then((data) => sendProjectAssistantMessageResponseSchema.parse(data));
+}
+
+/**
+ * Async submit — persists the user message and returns immediately.
+ * The agent turn runs in the background; the assistant reply appears
+ * later and is picked up via polling GET /messages.
+ */
+export function submitProjectAssistantMessage(
+  workspaceId: string,
+  projectId: string,
+  body: SendProjectAssistantMessageBodyInput,
+) {
+  return fetchApiClient(
+    `/api/v1/workspaces/${workspaceId}/projects/${projectId}/assistant/messages/submit`,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
+  ).then((data) => submitProjectAssistantMessageResponseSchema.parse(data));
 }
 
 export function createProjectAssistantThread(

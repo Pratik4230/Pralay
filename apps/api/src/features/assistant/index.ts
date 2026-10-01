@@ -5,6 +5,7 @@ import {
   listProjectAssistantThreadsController,
   sendProjectAssistantMessageController,
   streamProjectAssistantMessageController,
+  submitProjectAssistantMessageController,
 } from "./controllers/project-assistant.controller.js";
 import {
   createProjectAssistantThreadRoute,
@@ -21,5 +22,9 @@ export function registerAssistantFeature(app: ApiApp) {
   app.post(
     "/api/v1/workspaces/:id/projects/:projectId/assistant/messages/stream",
     streamProjectAssistantMessageController,
+  );
+  app.post(
+    "/api/v1/workspaces/:id/projects/:projectId/assistant/messages/submit",
+    submitProjectAssistantMessageController,
   );
 }

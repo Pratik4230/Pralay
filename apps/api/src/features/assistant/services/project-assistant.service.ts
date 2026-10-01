@@ -369,4 +369,144 @@ export async function sendProjectAssistantMessage(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Submit + Poll pattern (production)
+// ---------------------------------------------------------------------------
+
+const AGENT_ERROR_REPLY =
+  "I could not generate a reply right now. Please try again in a moment.";
+
+/**
+ * Runs the full agent turn in the background after the user message has been
+ * persisted. On success: persists assistant reply + optional thread title.
+ * On failure: persists an error assistant message so the client always gets
+ * a response via polling.
+ *
+ * This function never throws — all errors are caught and handled.
+ */
+async function processAgentTurnInBackground(params: {
+  actorUserId: string;
+  workspaceId: string;
+  projectId: string;
+  threadRow: ThreadRow;
+  userMessageRow: MessageRow;
+  body: SendProjectAssistantMessageBody;
+}): Promise<void> {
+  const { actorUserId, workspaceId, projectId, threadRow, body } = params;
+  const userMessageRef = { row: params.userMessageRow };
+
+  try {
+    const history = await loadCreateChatHistory(threadRow.id, {
+      id: userMessageRef.row.id,
+      createdAt: userMessageRef.row.createdAt,
+    });
+
+    const assistantContent = await generateCreateAssistantReply(
+      {
+        chatModelId: body.chatModelId,
+        workspaceId,
+        projectId,
+        threadSummary: threadRow.summary,
+        history,
+        userPrompt: body.prompt,
+        referenceAssetIds: body.referenceAssetIds,
+      },
+      {
+        actorUserId,
+        workspaceId,
+        projectId,
+        body,
+        getUserMessageRow: () => userMessageRef.row,
+        setUserMessageRow: (row) => {
+          userMessageRef.row = row;
+        },
+      },
+    );
+
+    await completeAssistantTurn({
+      threadRow,
+      userMessageRow: userMessageRef.row,
+      prompt: body.prompt,
+      assistantContent,
+    });
+  } catch (error) {
+    console.error("[create-assistant] background agent turn failed", error);
+
+    // Persist a visible error message so the client sees something via polling.
+    try {
+      await db.insert(assistantMessages).values({
+        threadId: threadRow.id,
+        role: "assistant",
+        content: AGENT_ERROR_REPLY,
+        referenceAssetIds: [],
+      });
+      await db
+        .update(assistantThreads)
+        .set({ updatedAt: new Date() })
+        .where(eq(assistantThreads.id, threadRow.id));
+    } catch (dbError) {
+      console.error(
+        "[create-assistant] failed to persist error reply",
+        dbError,
+      );
+    }
+  }
+}
+
+/**
+ * Async submit: persists the user message, fires the agent turn in the
+ * background, and returns immediately. The assistant reply appears later
+ * and is picked up by the client via polling GET /messages.
+ */
+export async function submitProjectAssistantMessage(
+  actorUserId: string,
+  workspaceId: string,
+  projectId: string,
+  input: SendProjectAssistantMessageBody,
+) {
+  const { threadRow, userMessageRow: persistedUserMessage } =
+    await persistProjectAssistantUserMessage(
+      actorUserId,
+      workspaceId,
+      projectId,
+      input,
+    );
+
+  let userMessageRow = persistedUserMessage;
+
+  if (input.enqueueGeneration) {
+    try {
+      const linked = await attachGenerationToAssistantUserMessage({
+        actorUserId,
+        workspaceId,
+        projectId,
+        messageId: userMessageRow.id,
+        prompt: input.prompt,
+        inputAssetIds: input.referenceAssetIds,
+        aspectRatio: input.aspectRatio,
+      });
+      userMessageRow = linked.userMessageRow;
+    } catch (error) {
+      if (!(error instanceof StorageNotConfiguredError)) {
+        throw error;
+      }
+    }
+  }
+
+  // Fire agent turn in background — never awaited from the HTTP handler.
+  void processAgentTurnInBackground({
+    actorUserId,
+    workspaceId,
+    projectId,
+    threadRow,
+    userMessageRow,
+    body: input,
+  });
+
+  return {
+    thread: mapThread(threadRow),
+    userMessage: mapMessage(userMessageRow),
+  };
+}
+
 export { AssistantMessageListCursorError };

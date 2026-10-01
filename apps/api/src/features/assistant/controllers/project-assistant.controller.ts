@@ -11,6 +11,7 @@ import {
   projectNotFoundError,
   sendProjectAssistantMessageBodySchema,
   sendProjectAssistantMessageResponseSchema,
+  submitProjectAssistantMessageResponseSchema,
   unauthorizedError,
   workspaceNotFoundError,
 } from "@repo/validators";
@@ -24,6 +25,7 @@ import {
   listProjectAssistantMessages,
   listProjectAssistantThreads,
   sendProjectAssistantMessage,
+  submitProjectAssistantMessage,
 } from "../services/project-assistant.service.js";
 import {
   ProjectNotFoundError,
@@ -217,6 +219,44 @@ export async function streamProjectAssistantMessageController(
     }
     if (error instanceof ProjectNotFoundError) {
       return c.json(projectNotFoundError, 404);
+    }
+    throw error;
+  }
+}
+
+export async function submitProjectAssistantMessageController(
+  c: Context<{ Variables: AuthVariables }>,
+) {
+  const session = c.get("session");
+  if (!session) return c.json(unauthorizedError, 401);
+
+  const workspaceId = c.req.param("id");
+  const projectId = c.req.param("projectId");
+  if (!workspaceId || !projectId) return c.json(projectNotFoundError, 404);
+
+  const body = sendProjectAssistantMessageBodySchema.parse(await c.req.json());
+
+  try {
+    const result = await submitProjectAssistantMessage(
+      session.user.id,
+      workspaceId,
+      projectId,
+      body,
+    );
+
+    return c.json(
+      submitProjectAssistantMessageResponseSchema.parse(result),
+      202,
+    );
+  } catch (error) {
+    if (error instanceof WorkspaceAccessError) {
+      return c.json(workspaceNotFoundError, 404);
+    }
+    if (error instanceof ProjectNotFoundError) {
+      return c.json(projectNotFoundError, 404);
+    }
+    if (error instanceof AssistantThreadNotFoundError) {
+      return c.json(assistantThreadNotFoundError, 404);
     }
     throw error;
   }

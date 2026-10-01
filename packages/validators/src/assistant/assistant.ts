@@ -78,6 +78,15 @@ export const sendProjectAssistantMessageResponseSchema = z.object({
   assistantMessage: assistantMessageSchema,
 });
 
+/**
+ * Async submit: returns user message immediately; assistant reply arrives
+ * later and is picked up by polling GET /messages.
+ */
+export const submitProjectAssistantMessageResponseSchema = z.object({
+  thread: assistantThreadSchema,
+  userMessage: assistantMessageSchema,
+});
+
 export const assistantThreadNotFoundError = createApiError(
   "NOT_FOUND",
   "Thread not found",
