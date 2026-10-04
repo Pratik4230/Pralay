@@ -8,6 +8,7 @@ import { createKeys } from "@/features/create/utils/query-keys";
 import {
   fetchProjectAssistantMessages,
   fetchProjectAssistantThreads,
+  deleteProjectAssistantThread,
   sendProjectAssistantMessage,
 } from "@/features/create/utils/fetch-project-assistant";
 
@@ -63,6 +64,30 @@ export function useSendProjectAssistantMessage(
           projectId,
           data.thread.id,
         ),
+      });
+    },
+  });
+}
+
+export function useDeleteProjectAssistantThread(
+  workspaceId: string,
+  projectId: string,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (threadId: string) =>
+      deleteProjectAssistantThread(workspaceId, projectId, threadId),
+    onSuccess: (_data, threadId) => {
+      queryClient.removeQueries({
+        queryKey: createKeys.assistantMessages(
+          workspaceId,
+          projectId,
+          threadId,
+        ),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: createKeys.assistantThreads(workspaceId, projectId),
       });
     },
   });

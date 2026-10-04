@@ -5,6 +5,8 @@ import {
   createApiError,
   createProjectAssistantThreadBodySchema,
   createProjectAssistantThreadResponseSchema,
+  deleteProjectAssistantThreadResponseSchema,
+  forbiddenError,
   listProjectAssistantMessagesQuerySchema,
   listProjectAssistantMessagesResponseSchema,
   listProjectAssistantThreadsResponseSchema,
@@ -22,15 +24,17 @@ import {
   AssistantMessageListCursorError,
   AssistantThreadNotFoundError,
   createProjectAssistantThread,
+  deleteProjectAssistantThread,
   listProjectAssistantMessages,
   listProjectAssistantThreads,
   sendProjectAssistantMessage,
   submitProjectAssistantMessage,
 } from "../services/project-assistant.service.js";
+import { ProjectNotFoundError } from "../../projects/services/workspace-projects.service.js";
 import {
-  ProjectNotFoundError,
-} from "../../projects/services/workspace-projects.service.js";
-import { WorkspaceAccessError } from "../../workspace/services/workspace-access.service.js";
+  WorkspaceAccessError,
+  WorkspaceForbiddenError,
+} from "../../workspace/services/workspace-access.service.js";
 
 const invalidMessageCursorError = createApiError(
   "VALIDATION_ERROR",
@@ -108,6 +112,46 @@ export async function createProjectAssistantThreadController(
   }
 }
 
+export async function deleteProjectAssistantThreadController(
+  c: Context<{ Variables: AuthVariables }>,
+) {
+  const session = c.get("session");
+  if (!session) return c.json(unauthorizedError, 401);
+
+  const { workspaceId, projectId } = workspaceProjectParams(c);
+  const threadId = c.req.param("threadId");
+  if (!workspaceId || !projectId || !threadId) {
+    return c.json(assistantThreadNotFoundError, 404);
+  }
+
+  try {
+    const result = await deleteProjectAssistantThread(
+      session.user.id,
+      workspaceId,
+      projectId,
+      threadId,
+    );
+    return c.json(
+      deleteProjectAssistantThreadResponseSchema.parse(result),
+      200,
+    );
+  } catch (error) {
+    if (error instanceof WorkspaceAccessError) {
+      return c.json(workspaceNotFoundError, 404);
+    }
+    if (error instanceof ProjectNotFoundError) {
+      return c.json(projectNotFoundError, 404);
+    }
+    if (error instanceof AssistantThreadNotFoundError) {
+      return c.json(assistantThreadNotFoundError, 404);
+    }
+    if (error instanceof WorkspaceForbiddenError) {
+      return c.json(forbiddenError, 403);
+    }
+    throw error;
+  }
+}
+
 export async function listProjectAssistantMessagesController(
   c: Context<{ Variables: AuthVariables }>,
 ) {
@@ -134,7 +178,10 @@ export async function listProjectAssistantMessagesController(
       query,
     );
 
-    return c.json(listProjectAssistantMessagesResponseSchema.parse(result), 200);
+    return c.json(
+      listProjectAssistantMessagesResponseSchema.parse(result),
+      200,
+    );
   } catch (error) {
     if (error instanceof WorkspaceAccessError) {
       return c.json(workspaceNotFoundError, 404);

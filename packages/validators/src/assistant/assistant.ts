@@ -54,6 +54,10 @@ export const createProjectAssistantThreadResponseSchema = z.object({
   thread: assistantThreadSchema,
 });
 
+export const deleteProjectAssistantThreadResponseSchema = z.object({
+  success: z.literal(true),
+});
+
 export const listProjectAssistantMessagesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
   cursor: z.string().trim().min(1).optional(),

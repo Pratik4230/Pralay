@@ -24,6 +24,11 @@ export const CreateProjectThreadComposer: FC<CreateProjectThreadComposerProps> =
         className="border-foreground/10 focus-within:border-foreground/25 flex w-full cursor-text flex-col gap-2 rounded-(--composer-radius) border bg-(--composer-bg) p-(--composer-padding) transition-[border-color]"
       >
         <CreateComposerHighlightedInput autoFocus={autoFocus} />
+        <p className="px-1 text-xs text-muted-foreground">
+          Tip: use up to 5 @ references per image. Pick the assets that should
+          match most closely, then describe any additional people or details in
+          your prompt.
+        </p>
         <CreateComposerAction
           workspaceId={workspaceId}
           projectId={projectId}

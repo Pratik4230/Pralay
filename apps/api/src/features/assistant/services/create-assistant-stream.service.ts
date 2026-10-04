@@ -200,6 +200,8 @@ export async function* iterateProjectAssistantMessageStream(
       chatModelId: body.chatModelId,
       workspaceId,
       projectId,
+      threadId: threadRow.id,
+      userMessageId: userMessageRef.row.id,
       threadSummary: threadRow.summary,
       history,
       userPrompt: body.prompt,

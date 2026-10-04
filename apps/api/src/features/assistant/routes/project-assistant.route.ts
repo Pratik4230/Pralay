@@ -5,6 +5,7 @@ import {
   apiErrorSchema,
   createProjectAssistantThreadBodySchema,
   createProjectAssistantThreadResponseSchema,
+  deleteProjectAssistantThreadResponseSchema,
   listProjectAssistantMessagesQuerySchema,
   listProjectAssistantMessagesResponseSchema,
   listProjectAssistantThreadsResponseSchema,
@@ -83,6 +84,40 @@ export const createProjectAssistantThreadRoute = createRoute({
     },
     422: {
       description: "Validation error",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+  },
+});
+
+export const deleteProjectAssistantThreadRoute = createRoute({
+  method: "delete",
+  path: "/api/v1/workspaces/{id}/projects/{projectId}/assistant/threads/{threadId}",
+  tags: ["Assistant"],
+  summary: "Permanently delete a Create assistant thread",
+  description:
+    "Permanently deletes the thread and its messages. Generated assets remain in the project library.",
+  request: {
+    params: workspaceProjectThreadParamsSchema,
+  },
+  responses: {
+    200: {
+      description: "Thread deleted",
+      content: {
+        "application/json": {
+          schema: deleteProjectAssistantThreadResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Not authenticated",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+    403: {
+      description: "Not permitted to delete this thread",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+    404: {
+      description: "Workspace, project, or thread not found",
       content: { "application/json": { schema: apiErrorSchema } },
     },
   },

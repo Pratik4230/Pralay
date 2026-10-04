@@ -22,6 +22,8 @@ type CreateComposerAssetMentionsProps = {
   projectId: string;
 };
 
+const MAX_GENERATION_REFERENCES = 5;
+
 export const CreateComposerAssetMentions: FC<
   CreateComposerAssetMentionsProps
 > = ({ workspaceId, projectId }) => {
@@ -41,6 +43,9 @@ export const CreateComposerAssetMentions: FC<
   draftRef.current = draft;
 
   const setStagedAssets = useCreateProjectStore((state) => state.setStagedAssets);
+  const stagedAssetCount = useCreateProjectStore(
+    (state) => state.byProject[projectId]?.stagedAssets.length ?? 0,
+  );
 
   const { options: mentionMatches, isLoading: mentionLoading } =
     useCreateAssetSuggest(
@@ -92,6 +97,13 @@ export const CreateComposerAssetMentions: FC<
       const mention = activeMentionRef.current;
       if (!mention) return;
 
+      const alreadyStaged = useCreateProjectStore
+        .getState()
+        .byProject[projectId]?.stagedAssets.some((item) => item.id === option.id);
+      if (!alreadyStaged && stagedAssetCount >= MAX_GENERATION_REFERENCES) {
+        return;
+      }
+
       const nextDraft = replaceActiveComposerMention(
         currentDraft,
         mention,
@@ -106,9 +118,6 @@ export const CreateComposerAssetMentions: FC<
       setMentionQuery("");
       activeMentionRef.current = null;
 
-      const alreadyStaged = useCreateProjectStore
-        .getState()
-        .byProject[projectId]?.stagedAssets.some((item) => item.id === option.id);
       if (alreadyStaged) return;
 
       setStagedAssets(projectId, (current) => [
@@ -121,7 +130,7 @@ export const CreateComposerAssetMentions: FC<
         },
       ]);
     },
-    [aui, projectId, queueCaretAfterEdit, setStagedAssets],
+    [aui, projectId, queueCaretAfterEdit, setStagedAssets, stagedAssetCount],
   );
 
   useEffect(() => {
@@ -169,6 +178,10 @@ export const CreateComposerAssetMentions: FC<
       {mentionLoading ? (
         <p className="px-3 py-2 text-xs text-muted-foreground">
           Searching assets…
+        </p>
+      ) : stagedAssetCount >= MAX_GENERATION_REFERENCES ? (
+        <p className="px-3 py-2 text-xs text-muted-foreground">
+          Up to 5 references can guide one image. Remove a mention to choose another.
         </p>
       ) : mentionMatches.length > 0 ? (
         <ul ref={listRef} className="max-h-48 overflow-y-auto p-1">

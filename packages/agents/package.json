@@ -19,6 +19,7 @@
   },
   "devDependencies": {
     "@repo/typescript-config": "*",
+    "@types/bun": "latest",
     "@types/node": "26.4.1",
     "typescript": "7.0.2"
   }

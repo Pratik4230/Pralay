@@ -4,6 +4,7 @@ import {
   streamCreateChatTurn,
   type CreateChatHistoryMessage,
   type CreateChatRunContext,
+  type CreateChatReferenceAsset,
 } from "@repo/agents";
 import { hasOpenAiApiKey } from "@repo/env";
 import type {
@@ -11,7 +12,10 @@ import type {
   SendProjectAssistantMessageBody,
 } from "@repo/validators";
 
-import { createCreateChatToolHandlers } from "./create-assistant-tool-handlers.service.js";
+import {
+  createCreateChatToolHandlers,
+  loadCreateAssetMetadata,
+} from "./create-assistant-tool-handlers.service.js";
 import type { MessageRow } from "./project-assistant.service.js";
 import { mapMessage } from "./project-assistant.service.js";
 
@@ -34,13 +38,8 @@ export type CreateAssistantChatContext = {
 function buildRunContext(
   chatContext: CreateAssistantChatContext,
 ): CreateChatRunContext {
-  const pendingVisionPreviews: Array<{ name: string; url: string }> = [];
   return {
-    pendingVisionPreviews,
-    toolHandlers: createCreateChatToolHandlers({
-      ...chatContext,
-      pendingVisionPreviews,
-    }),
+    toolHandlers: createCreateChatToolHandlers(chatContext),
   };
 }
 
@@ -48,11 +47,27 @@ type ChatTurnInput = {
   chatModelId: CreateChatModelId;
   workspaceId: string;
   projectId: string;
+  threadId?: string;
+  userMessageId?: string;
   threadSummary: string | null;
   history: CreateChatHistoryMessage[];
   userPrompt: string;
   referenceAssetIds: string[];
+  referenceAssets?: CreateChatReferenceAsset[];
 };
+
+async function withResolvedReferenceAssets(input: ChatTurnInput): Promise<ChatTurnInput> {
+  if (input.referenceAssetIds.length === 0) return input;
+
+  return {
+    ...input,
+    referenceAssets: await loadCreateAssetMetadata(
+      input.workspaceId,
+      input.projectId,
+      [...new Set(input.referenceAssetIds)],
+    ),
+  };
+}
 
 export async function generateCreateAssistantReply(
   input: ChatTurnInput,
@@ -63,7 +78,10 @@ export async function generateCreateAssistantReply(
   }
 
   try {
-    return await runCreateChatTurn(input, buildRunContext(chatContext));
+    return await runCreateChatTurn(
+      await withResolvedReferenceAssets(input),
+      buildRunContext(chatContext),
+    );
   } catch (error) {
     console.error("[create-assistant] chat turn failed", error);
     return MODEL_ERROR_REPLY;
@@ -80,7 +98,10 @@ export async function* streamCreateAssistantReply(
   }
 
   try {
-    yield* streamCreateChatTurn(input, buildRunContext(chatContext));
+    yield* streamCreateChatTurn(
+      await withResolvedReferenceAssets(input),
+      buildRunContext(chatContext),
+    );
   } catch (error) {
     console.error("[create-assistant] chat stream failed", error);
     yield MODEL_ERROR_REPLY;

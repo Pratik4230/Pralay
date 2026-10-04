@@ -3,6 +3,7 @@ export {
   runOpenAiWebSearch,
   streamCreateChatTurn,
   type CreateChatHistoryMessage,
+  type CreateChatReferenceAsset,
   type CreateChatRunContext,
   type RunCreateChatTurnInput,
 } from "./create/create-chat-graph.js";

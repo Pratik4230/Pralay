@@ -30,8 +30,16 @@ export function ProjectCreatePage({
   });
   useInfiniteWorkspaceAssets(workspaceId, { scope: "workspace", limit: 50 });
 
-  const { hydrated, threadsLoading, threads, activeThreadId, createThread, selectThread } =
-    useProjectCreateUi(workspaceId, projectId);
+  const {
+    hydrated,
+    threadsLoading,
+    threads,
+    activeThreadId,
+    createThread,
+    selectThread,
+    deleteThread,
+    isDeletingThread,
+  } = useProjectCreateUi(workspaceId, projectId);
 
   const threadComponents = useMemo(
     () => ({
@@ -70,6 +78,8 @@ export function ProjectCreatePage({
             activeThreadId={activeThreadId}
             onSelect={selectThread}
             onCreate={createThread}
+            onDelete={deleteThread}
+            isDeleting={isDeletingThread}
           />
           <p className="truncate text-xs text-muted-foreground">
             {projectQuery.data.project.name}

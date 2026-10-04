@@ -27,6 +27,7 @@ import type { UpdateWorkspaceBody } from "@repo/validators";
 
 import { parseFieldErrors } from "@/features/auth/utils/parse-field-errors";
 import { WorkspaceAvatarUpload } from "@/features/workspace/components/workspace-avatar-upload";
+import { WorkspaceCoverUpload } from "@/features/workspace/components/workspace-cover-upload";
 import {
   useDeleteWorkspace,
   useUpdateWorkspace,
@@ -42,6 +43,7 @@ type WorkspaceSettingsPanelProps = {
   slug: string;
   description: string | null;
   avatarKey: string | null;
+  coverImageKey: string | null;
   role: WorkspaceRole;
   onDeleted: () => void;
 };
@@ -52,6 +54,7 @@ export function WorkspaceSettingsPanel({
   slug,
   description,
   avatarKey,
+  coverImageKey,
   role,
   onDeleted,
 }: WorkspaceSettingsPanelProps) {
@@ -154,8 +157,8 @@ export function WorkspaceSettingsPanel({
           <CardHeader>
             <CardTitle>Workspace settings</CardTitle>
             <CardDescription>
-              Update your workspace name, URL slug, and description. Change
-              the avatar separately below.
+              Update your workspace name, URL slug, and description. Change the
+              avatar separately below.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -164,6 +167,11 @@ export function WorkspaceSettingsPanel({
                 workspaceId={workspaceId}
                 name={workspaceName}
                 avatarKey={avatarKey}
+              />
+              <WorkspaceCoverUpload
+                workspaceId={workspaceId}
+                name={workspaceName}
+                coverImageKey={coverImageKey}
               />
               <Field data-invalid={!!fieldErrors.name}>
                 <FieldLabel htmlFor="settings-name">Name</FieldLabel>
@@ -223,8 +231,10 @@ export function WorkspaceSettingsPanel({
                 <p className="text-sm text-muted-foreground">{saveMessage}</p>
               ) : null}
               {updateWorkspace.error &&
-              !(updateWorkspace.error instanceof ApiRequestError &&
-                updateWorkspace.error.status === 409) ? (
+              !(
+                updateWorkspace.error instanceof ApiRequestError &&
+                updateWorkspace.error.status === 409
+              ) ? (
                 <FieldError>{updateWorkspace.error.message}</FieldError>
               ) : null}
             </FieldGroup>

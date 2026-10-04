@@ -31,7 +31,11 @@ export const createPromptTextSchema = z
 
 export const createReferenceAssetIdsSchema = z
   .array(z.uuid())
-  .max(12, "At most 12 reference assets per message");
+  .max(5, "At most 5 image references are supported per generation")
+  .refine(
+    (assetIds) => new Set(assetIds).size === assetIds.length,
+    "Reference assets must be unique",
+  );
 
 export const createAttachedAssetRefSchema = z.object({
   assetId: z.uuid(),

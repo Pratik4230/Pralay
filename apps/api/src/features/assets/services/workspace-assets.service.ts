@@ -4,6 +4,8 @@ import { db } from "@repo/db";
 import { assets, projectAssets } from "@repo/db/schema";
 import {
   buildWorkspaceAssetKey,
+  buildAssetThumbnailKey,
+  createImageThumbnail,
   createPresignedUploadUrl,
   deleteObject,
   isStorageConfigured,
@@ -190,6 +192,25 @@ export async function createWorkspaceAsset(
 
     return created;
   });
+
+  if (input.contentType.startsWith("image/")) {
+    try {
+      const thumbnailKey = buildAssetThumbnailKey(workspaceId, asset.id);
+      await createImageThumbnail({
+        sourceKey: input.s3Key,
+        destinationKey: thumbnailKey,
+      });
+      await db
+        .update(assets)
+        .set({ thumbnailKey, updatedAt: new Date() })
+        .where(eq(assets.id, asset.id));
+    } catch (error) {
+      console.warn("[assets] thumbnail generation failed", {
+        assetId: asset.id,
+        message: error instanceof Error ? error.message : "unknown error",
+      });
+    }
+  }
 
   return mapAssetRow(asset as AssetRow);
 }

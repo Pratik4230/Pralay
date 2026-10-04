@@ -1,10 +1,13 @@
-import { runOpenAiWebSearch, type CreateChatToolHandlers } from "@repo/agents";
+import {
+  runOpenAiWebSearch,
+  type CreateChatToolHandlers,
+  type InspectAssetsToolResult,
+} from "@repo/agents";
 import type { SendProjectAssistantMessageBody } from "@repo/validators";
 import { and, eq, inArray, isNull, or } from "drizzle-orm";
 
 import { db } from "@repo/db";
 import { assets, assistantMessages } from "@repo/db/schema";
-import { createPresignedDownloadUrl } from "@repo/storage";
 
 import { searchWorkspaceAssetsForCreateAgent } from "../../assets/services/create-asset-search.service.js";
 import {
@@ -18,7 +21,13 @@ import type { MessageRow } from "./project-assistant.service.js";
 import { mapMessage } from "./project-assistant.service.js";
 
 const CREATE_UPLOAD_HINT =
-  "Use the + attach button in the composer to upload a reference image and set its name (example: jonathan), or type @ to pick from the library.";
+    "Use the + attach button in the composer to upload a reference image and set its name (example: jonathan), or type @ to pick from the library.";
+
+const VISUAL_REQUEST_PATTERN = /\b(create|generate|make|design|render|produce|illustrate|draw|thumbnail|image|poster|visual|graphic|banner|ad)\b/i;
+
+function explicitlyRequestsVisual(prompt: string) {
+  return VISUAL_REQUEST_PATTERN.test(prompt);
+}
 
 async function assertAssetsForProject(
   workspaceId: string,
@@ -47,46 +56,44 @@ async function assertAssetsForProject(
   }
 }
 
-async function loadAssetPreviews(
+export async function loadCreateAssetMetadata(
   workspaceId: string,
   projectId: string,
   assetIds: string[],
-) {
+): Promise<InspectAssetsToolResult["assets"]> {
   await assertAssetsForProject(workspaceId, projectId, assetIds);
 
   const rows = await db
     .select({
       id: assets.id,
       name: assets.name,
+      category: assets.category,
+      tags: assets.tags,
       mimeType: assets.mimeType,
-      s3Key: assets.s3Key,
+      width: assets.width,
+      height: assets.height,
+      primaryProjectId: assets.primaryProjectId,
+      description: assets.description,
     })
     .from(assets)
     .where(inArray(assets.id, assetIds));
 
   const byId = new Map(rows.map((row) => [row.id, row]));
-  const previews: Array<{
-    id: string;
-    name: string;
-    previewUrl: string;
-    mimeType: string;
-  }> = [];
+  const previews: InspectAssetsToolResult["assets"] = [];
 
   for (const id of assetIds) {
     const row = byId.get(id);
     if (!row) continue;
-    if (!row.mimeType.startsWith("image/")) {
-      continue;
-    }
-    const previewUrl = await createPresignedDownloadUrl({
-      key: row.s3Key,
-      expiresIn: 3600,
-    });
     previews.push({
       id: row.id,
       name: row.name,
-      previewUrl,
+      category: row.category,
+      tags: row.tags,
       mimeType: row.mimeType,
+      width: row.width,
+      height: row.height,
+      scope: row.primaryProjectId ? "project" : "workspace",
+      description: row.description,
     });
   }
 
@@ -101,7 +108,6 @@ export function createCreateChatToolHandlers(input: {
   getUserMessageRow: () => MessageRow;
   setUserMessageRow: (row: MessageRow) => void;
   onGenerationLinked?: (userMessage: ReturnType<typeof mapMessage>) => void;
-  pendingVisionPreviews: Array<{ name: string; url: string }>;
 }): CreateChatToolHandlers {
   const mergeReferenceAssetIds = (extra: string[]) => {
     const merged = [
@@ -163,25 +169,18 @@ export function createCreateChatToolHandlers(input: {
     },
 
     inspectAssets: async ({ assetIds }) => {
-      const previews = await loadAssetPreviews(
+      const previews = await loadCreateAssetMetadata(
         input.workspaceId,
         input.projectId,
         assetIds.slice(0, 4),
       );
 
-      for (const preview of previews) {
-        input.pendingVisionPreviews.push({
-          name: preview.name,
-          url: preview.previewUrl,
-        });
-      }
-
       return {
         assets: previews,
         message:
           previews.length > 0
-            ? "Preview URLs attached for vision on the next model turn."
-            : "No image previews available for those asset IDs.",
+            ? "Asset metadata loaded. No image pixels were sent."
+            : "No matching assets were found.",
       };
     },
 
@@ -215,8 +214,20 @@ export function createCreateChatToolHandlers(input: {
       }
     },
 
-    startGeneration: async ({ aspectRatio, prompt, referenceAssetIds }) => {
+    startGeneration: async ({
+      aspectRatio,
+      prompt,
+      referenceAssetIds,
+      referenceRoles,
+    }) => {
       const current = input.getUserMessageRow();
+      if (!explicitlyRequestsVisual(input.body.prompt)) {
+        return {
+          generationId: "",
+          status: "not_requested",
+          message: "Generation was not queued because this message does not explicitly request a new visual.",
+        };
+      }
       if (current.generationId) {
         return {
           generationId: current.generationId,
@@ -225,11 +236,37 @@ export function createCreateChatToolHandlers(input: {
         };
       }
 
+      if (current.referenceAssetIds.length > 5) {
+        return {
+          generationId: "",
+          status: "failed",
+          message:
+            "Grok supports up to five image references. Ask the user which five references should guide this image.",
+        };
+      }
+
       let mergedRefs = current.referenceAssetIds;
       if (referenceAssetIds && referenceAssetIds.length > 0) {
+        const proposedRefs = [
+          ...new Set([...current.referenceAssetIds, ...referenceAssetIds]),
+        ];
+        if (proposedRefs.length > 5) {
+          return {
+            generationId: "",
+            status: "failed",
+            message:
+              "Grok supports up to five image references. Ask the user which five references should guide this image.",
+          };
+        }
         const persisted = await persistReferenceAssetIds(referenceAssetIds);
         mergedRefs = persisted.merged;
       }
+
+      const validReferenceRoles = Object.fromEntries(
+        Object.entries(referenceRoles ?? {}).filter(
+          ([assetId, role]) => mergedRefs.includes(assetId) && role.trim().length > 0,
+        ),
+      );
 
       const generationPrompt = prompt?.trim() || input.body.prompt;
 
@@ -242,6 +279,7 @@ export function createCreateChatToolHandlers(input: {
           prompt: generationPrompt,
           inputAssetIds: mergedRefs,
           aspectRatio: aspectRatio ?? input.body.aspectRatio,
+          referenceRoles: validReferenceRoles,
         });
 
         input.setUserMessageRow(linked.userMessageRow);

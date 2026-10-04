@@ -10,8 +10,17 @@ import {
   createUniqueWorkspaceSlug,
   isWorkspaceSlugTaken,
 } from "@repo/db/utils/workspace-slug";
-import { parseWorkspaceIdFromAvatarKey, deleteObject, deleteWorkspaceUploadObjects } from "@repo/storage";
-import type { CreateWorkspaceBody, ListWorkspacesQuery, UpdateWorkspaceBody } from "@repo/validators";
+import {
+  deleteObject,
+  deleteWorkspaceUploadObjects,
+  parseWorkspaceIdFromAvatarKey,
+  parseWorkspaceIdFromCoverKey,
+} from "@repo/storage";
+import type {
+  CreateWorkspaceBody,
+  ListWorkspacesQuery,
+  UpdateWorkspaceBody,
+} from "@repo/validators";
 
 import {
   decodeWorkspaceListCursor,
@@ -254,14 +263,26 @@ export async function updateWorkspaceForUser(
     }
   }
 
+  if (input.coverImageKey !== undefined && input.coverImageKey !== null) {
+    const keyWorkspaceId = parseWorkspaceIdFromCoverKey(input.coverImageKey);
+    if (keyWorkspaceId !== workspaceId) {
+      throw new InvalidWorkspaceMediaKeyError();
+    }
+  }
+
   let previousAvatarKey: string | null = null;
-  if (input.avatarKey !== undefined) {
+  let previousCoverImageKey: string | null = null;
+  if (input.avatarKey !== undefined || input.coverImageKey !== undefined) {
     const [existing] = await db
-      .select({ avatarKey: workspaces.avatarKey })
+      .select({
+        avatarKey: workspaces.avatarKey,
+        coverImageKey: workspaces.coverImageKey,
+      })
       .from(workspaces)
       .where(eq(workspaces.id, workspaceId))
       .limit(1);
     previousAvatarKey = existing?.avatarKey ?? null;
+    previousCoverImageKey = existing?.coverImageKey ?? null;
   }
 
   await db
@@ -273,7 +294,9 @@ export async function updateWorkspaceForUser(
         : {}),
       ...(input.slug !== undefined ? { slug: input.slug } : {}),
       ...(input.avatarKey !== undefined ? { avatarKey: input.avatarKey } : {}),
-      ...(input.coverImageKey !== undefined ? { coverImageKey: input.coverImageKey } : {}),
+      ...(input.coverImageKey !== undefined
+        ? { coverImageKey: input.coverImageKey }
+        : {}),
       ...(input.status !== undefined ? { status: input.status } : {}),
       updatedAt: sql`now()`,
     })
@@ -286,6 +309,18 @@ export async function updateWorkspaceForUser(
   ) {
     try {
       await deleteObject(previousAvatarKey);
+    } catch {
+      // Best-effort cleanup; DB is already updated.
+    }
+  }
+
+  if (
+    input.coverImageKey !== undefined &&
+    previousCoverImageKey &&
+    previousCoverImageKey !== input.coverImageKey
+  ) {
+    try {
+      await deleteObject(previousCoverImageKey);
     } catch {
       // Best-effort cleanup; DB is already updated.
     }

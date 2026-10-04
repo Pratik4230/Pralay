@@ -8,7 +8,10 @@ import type {
   CreateSessionState,
   CreateThread,
 } from "@/features/create/types/create-ui";
-import { useProjectAssistantThreads } from "@/features/create/hooks/use-project-assistant";
+import {
+  useDeleteProjectAssistantThread,
+  useProjectAssistantThreads,
+} from "@/features/create/hooks/use-project-assistant";
 import {
   DEFAULT_SESSION,
   useCreateProjectStore,
@@ -30,6 +33,10 @@ export function useProjectCreateUi(workspaceId: string, projectId: string) {
   const setChatModel = useCreateProjectStore((state) => state.setChatModel);
 
   const threadsQuery = useProjectAssistantThreads(workspaceId, projectId);
+  const deleteThreadMutation = useDeleteProjectAssistantThread(
+    workspaceId,
+    projectId,
+  );
 
   useEffect(() => {
     ensureProject(projectId);
@@ -46,7 +53,9 @@ export function useProjectCreateUi(workspaceId: string, projectId: string) {
   }, [threadsQuery.data, projectId, selectThread]);
 
   const threads = useMemo((): CreateThread[] => {
-    return (threadsQuery.data?.threads ?? []).map(assistantThreadToCreateThread);
+    return (threadsQuery.data?.threads ?? []).map(
+      assistantThreadToCreateThread,
+    );
   }, [threadsQuery.data]);
 
   const activeThreadId = slice?.activeThreadId ?? null;
@@ -66,6 +75,20 @@ export function useProjectCreateUi(workspaceId: string, projectId: string) {
     }
   };
 
+  const deleteThread = async (threadId: string) => {
+    await deleteThreadMutation.mutateAsync(threadId);
+
+    const current = useCreateProjectStore.getState().byProject[projectId];
+    if (current?.activeThreadId !== threadId) return;
+
+    const nextThread = threads.find((thread) => thread.id !== threadId);
+    if (nextThread) {
+      selectThread(projectId, nextThread.id);
+    } else {
+      startNewChat(projectId);
+    }
+  };
+
   return {
     hydrated: hasHydrated,
     threadsLoading: threadsQuery.isLoading,
@@ -75,6 +98,8 @@ export function useProjectCreateUi(workspaceId: string, projectId: string) {
     session,
     createThread: () => startNewChat(projectId),
     selectThread: (threadId: string) => selectThread(projectId, threadId),
+    deleteThread,
+    isDeletingThread: deleteThreadMutation.isPending,
     setDraft: (draft: string) => setDraft(projectId, draft),
     setChatModel: (chatModelId: CreateChatModelId) =>
       setChatModel(projectId, chatModelId),

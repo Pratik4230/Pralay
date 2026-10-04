@@ -3,6 +3,7 @@ export {
   buildProjectCoverKey,
   buildGeneratedAssetKey,
   buildWorkspaceAssetKey,
+  buildAssetThumbnailKey,
   buildWorkspaceAvatarKey,
   buildWorkspaceCoverKey,
   buildWorkspaceUploadsPrefix,
@@ -27,3 +28,4 @@ export {
   getS3Client,
   putObjectBuffer,
 } from "./presign.js";
+export { createImageThumbnail } from "./thumbnail.js";

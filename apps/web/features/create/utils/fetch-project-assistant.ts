@@ -85,6 +85,17 @@ export function createProjectAssistantThread(
   );
 }
 
+export function deleteProjectAssistantThread(
+  workspaceId: string,
+  projectId: string,
+  threadId: string,
+) {
+  return fetchApiClient<{ success: true }>(
+    `/api/v1/workspaces/${workspaceId}/projects/${projectId}/assistant/threads/${threadId}`,
+    { method: "DELETE" },
+  );
+}
+
 export type {
   AssistantMessage,
   AssistantThread,

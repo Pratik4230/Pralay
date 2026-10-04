@@ -8,7 +8,11 @@ import { WorkspaceSettingsPanel } from "@/features/workspace/components/workspac
 import { useWorkspace } from "@/features/workspace/hooks/use-workspaces";
 import { canManageWorkspace } from "@/features/workspace/utils/workspace-helpers";
 
-export function WorkspaceSettingsPage({ workspaceId }: { workspaceId: string }) {
+export function WorkspaceSettingsPage({
+  workspaceId,
+}: {
+  workspaceId: string;
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const avatarUploadFailed = searchParams.get("avatarUpload") === "failed";
@@ -76,6 +80,7 @@ export function WorkspaceSettingsPage({ workspaceId }: { workspaceId: string }) 
         slug={workspace.slug}
         description={workspace.description}
         avatarKey={workspace.avatarKey}
+        coverImageKey={workspace.coverImageKey}
         role={membership.role}
         onDeleted={() => router.push("/dashboard")}
       />

@@ -1,10 +1,10 @@
-import { and, asc, eq, lt } from "drizzle-orm";
+import { and, desc, eq, lt } from "drizzle-orm";
 
 import { db } from "@repo/db";
 import { assistantMessages } from "@repo/db/schema";
 import type { CreateChatHistoryMessage } from "@repo/agents";
 
-const DEFAULT_HISTORY_LIMIT = 28;
+const DEFAULT_HISTORY_LIMIT = 16;
 
 export async function loadCreateChatHistory(
   threadId: string,
@@ -24,10 +24,12 @@ export async function loadCreateChatHistory(
         lt(assistantMessages.createdAt, beforeMessage.createdAt),
       ),
     )
-    .orderBy(asc(assistantMessages.createdAt))
+    // Fetch the newest bounded context first, then return it chronologically.
+    .orderBy(desc(assistantMessages.createdAt))
     .limit(limit);
 
   return rows
+    .reverse()
     .filter((row) => row.role === "user" || row.role === "assistant")
     .map((row) => ({
       role: row.role as "user" | "assistant",

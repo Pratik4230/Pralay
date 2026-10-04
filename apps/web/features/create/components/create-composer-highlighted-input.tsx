@@ -11,7 +11,7 @@ const composerInputTypography =
   "font-normal tracking-normal [font-variant-ligatures:none] text-base leading-6";
 
 const composerInputLayout =
-  "aui-composer-input max-h-48 min-h-10 w-full resize-none bg-transparent px-2.5 py-1 outline-none";
+  "aui-composer-input max-h-36 min-h-10 w-full resize-none bg-transparent px-2.5 py-1 outline-none";
 
 type CreateComposerHighlightedInputProps = {
   autoFocus?: boolean;
@@ -24,6 +24,7 @@ export function CreateComposerHighlightedInput({
   const { registerTextarea, notifyCaretMove, consumeQueuedCaret } =
     useCreateComposerCaret();
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const highlightRef = useRef<HTMLDivElement>(null);
 
   const setInputRef = useCallback(
     (el: HTMLTextAreaElement | null) => {
@@ -36,6 +37,15 @@ export function CreateComposerHighlightedInput({
   const syncCaretMove = useCallback(() => {
     notifyCaretMove();
   }, [notifyCaretMove]);
+
+  const syncHighlightScroll = useCallback(() => {
+    const input = inputRef.current;
+    const highlight = highlightRef.current;
+    if (!input || !highlight) return;
+
+    highlight.scrollTop = input.scrollTop;
+    highlight.scrollLeft = input.scrollLeft;
+  }, []);
 
   useLayoutEffect(() => {
     const queued = consumeQueuedCaret();
@@ -56,6 +66,7 @@ export function CreateComposerHighlightedInput({
     <div className="relative w-full">
       <div
         aria-hidden
+        ref={highlightRef}
         className={cn(
           composerInputLayout,
           composerInputTypography,
@@ -80,7 +91,11 @@ export function CreateComposerHighlightedInput({
         onSelect={syncCaretMove}
         onClick={syncCaretMove}
         onKeyUp={syncCaretMove}
-        onInput={syncCaretMove}
+        onInput={() => {
+          syncCaretMove();
+          syncHighlightScroll();
+        }}
+        onScroll={syncHighlightScroll}
       />
     </div>
   );

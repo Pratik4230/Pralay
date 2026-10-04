@@ -13,7 +13,11 @@ import {
   ProjectNotFoundError,
   getWorkspaceProject,
 } from "../../projects/services/workspace-projects.service.js";
-import { WorkspaceAccessError } from "../../workspace/services/workspace-access.service.js";
+import {
+  requireWorkspaceMembership,
+  WorkspaceAccessError,
+  WorkspaceForbiddenError,
+} from "../../workspace/services/workspace-access.service.js";
 import {
   AssistantMessageListCursorError,
   decodeAssistantMessageListCursor,
@@ -21,6 +25,7 @@ import {
 } from "./assistant-message-list-cursor.js";
 import { loadCreateChatHistory } from "./create-chat-context.js";
 import { completeAssistantTurn } from "./create-assistant-stream.service.js";
+import { inngest } from "../../../inngest/client.js";
 import { generateCreateAssistantReply } from "./create-assistant-ai.service.js";
 import {
   attachGenerationToAssistantUserMessage,
@@ -154,6 +159,37 @@ export async function createProjectAssistantThread(
   }
 
   return mapThread(row);
+}
+
+/**
+ * Permanently removes a Create conversation and its messages. Generation
+ * records and generated project assets are intentionally left intact.
+ */
+export async function deleteProjectAssistantThread(
+  actorUserId: string,
+  workspaceId: string,
+  projectId: string,
+  threadId: string,
+) {
+  await assertProjectInWorkspace(actorUserId, workspaceId, projectId);
+
+  const thread = await getThreadForProject(workspaceId, projectId, threadId);
+  if (!thread) {
+    throw new AssistantThreadNotFoundError();
+  }
+
+  const membership = await requireWorkspaceMembership(actorUserId, workspaceId);
+  const canDelete =
+    thread.createdBy === actorUserId ||
+    membership.role === "owner" ||
+    membership.role === "admin";
+  if (!canDelete) {
+    throw new WorkspaceForbiddenError();
+  }
+
+  await db.delete(assistantThreads).where(eq(assistantThreads.id, thread.id));
+
+  return { success: true as const };
 }
 
 export async function listProjectAssistantMessages(
@@ -338,6 +374,8 @@ export async function sendProjectAssistantMessage(
       chatModelId: input.chatModelId,
       workspaceId,
       projectId,
+      threadId: threadRow.id,
+      userMessageId: userMessageRow.id,
       threadSummary: threadRow.summary,
       history,
       userPrompt: input.prompt,
@@ -384,7 +422,7 @@ const AGENT_ERROR_REPLY =
  *
  * This function never throws — all errors are caught and handled.
  */
-async function processAgentTurnInBackground(params: {
+export async function processProjectAssistantTurn(params: {
   actorUserId: string;
   workspaceId: string;
   projectId: string;
@@ -406,6 +444,8 @@ async function processAgentTurnInBackground(params: {
         chatModelId: body.chatModelId,
         workspaceId,
         projectId,
+        threadId: threadRow.id,
+        userMessageId: userMessageRef.row.id,
         threadSummary: threadRow.summary,
         history,
         userPrompt: body.prompt,
@@ -493,14 +533,16 @@ export async function submitProjectAssistantMessage(
     }
   }
 
-  // Fire agent turn in background — never awaited from the HTTP handler.
-  void processAgentTurnInBackground({
-    actorUserId,
-    workspaceId,
-    projectId,
-    threadRow,
-    userMessageRow,
-    body: input,
+  await inngest.send({
+    name: "pralay/assistant-turn.requested",
+    data: {
+      actorUserId,
+      workspaceId,
+      projectId,
+      threadId: threadRow.id,
+      userMessageId: userMessageRow.id,
+      body: input,
+    },
   });
 
   return {

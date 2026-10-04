@@ -245,11 +245,18 @@ export type InsertProjectGenerationInput = {
   prompt: string;
   inputAssetIds: string[];
   aspectRatio?: string | null;
+  referenceRoles?: Record<string, string>;
 };
 
 export async function insertQueuedProjectGeneration(
   input: InsertProjectGenerationInput,
 ) {
+  const inputAssetIds = [...new Set(input.inputAssetIds)].slice(0, 5);
+  const referenceRoles = Object.fromEntries(
+    Object.entries(input.referenceRoles ?? {}).filter(([assetId]) =>
+      inputAssetIds.includes(assetId),
+    ),
+  );
   const { provider, model } = resolveImageGenerationDefaults();
 
   const generation = await db.transaction(async (tx) => {
@@ -262,8 +269,9 @@ export async function insertQueuedProjectGeneration(
         type: "generate",
         status: "queued",
         prompt: input.prompt,
-        inputAssetIds: input.inputAssetIds,
+        inputAssetIds,
         aspectRatio: input.aspectRatio ?? null,
+        referenceRoles,
         provider,
         model,
         variationCount: 1,
@@ -300,6 +308,7 @@ export async function attachGenerationToAssistantUserMessage(input: {
   prompt: string;
   inputAssetIds: string[];
   aspectRatio?: string | null;
+  referenceRoles?: Record<string, string>;
 }) {
   if (!isStorageConfigured()) {
     throw new StorageNotConfiguredError();
@@ -318,6 +327,7 @@ export async function attachGenerationToAssistantUserMessage(input: {
     prompt: input.prompt,
     inputAssetIds: input.inputAssetIds,
     aspectRatio: input.aspectRatio,
+    referenceRoles: input.referenceRoles,
   });
 
   const [updatedMessage] = await db

@@ -11,6 +11,7 @@
     "docker:ps": "docker compose -f infra/ec2/docker-compose.yml ps",
     "db:setup": "bun run docker:up && bun run db:generate && bun run db:migrate",
     "lint": "turbo run lint",
+    "test": "bun test",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "check-types": "turbo run check-types",
     "db:generate": "turbo run db:generate --filter=@repo/db",

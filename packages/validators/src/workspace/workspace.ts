@@ -119,6 +119,7 @@ export const updateWorkspaceBodySchema = z
       value.description !== undefined ||
       value.slug !== undefined ||
       value.avatarKey !== undefined ||
+      value.coverImageKey !== undefined ||
       value.status !== undefined,
     { message: "At least one field is required" },
   );

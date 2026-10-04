@@ -34,8 +34,13 @@ export type InspectAssetsToolResult = {
   assets: Array<{
     id: string;
     name: string;
-    previewUrl: string;
+    category: "person" | "logo" | "product" | "background" | "reference" | "other";
+    tags: string[];
     mimeType: string;
+    width: number | null;
+    height: number | null;
+    scope: "workspace" | "project";
+    description: string | null;
   }>;
   message: string;
 };
@@ -66,6 +71,7 @@ export type CreateChatToolHandlers = {
     aspectRatio?: string;
     prompt?: string;
     referenceAssetIds?: string[];
+    referenceRoles?: Record<string, string>;
   }) => Promise<StartGenerationToolResult>;
   getGenerationStatus: (input: {
     generationId: string;
@@ -97,7 +103,7 @@ export function createCreateChatTools(handlers: CreateChatToolHandlers) {
     {
       name: "inspect_assets",
       description:
-        "Load presigned preview URLs for library assets so you can see faces and logos. Call before start_generation for assets you will reference.",
+        "Load safe metadata for library assets. Use this to understand their names, categories, tags, and dimensions. This tool never returns image bytes or URLs.",
       schema: z.object({
         assetIds: z.array(z.uuid()).min(1).max(4),
       }),
@@ -161,6 +167,10 @@ export function createCreateChatTools(handlers: CreateChatToolHandlers) {
           .max(12)
           .optional()
           .describe("Library asset IDs to use as Grok reference images"),
+        referenceRoles: z
+          .record(z.string().uuid(), z.string().trim().min(1).max(200))
+          .optional()
+          .describe("Role for each referenced asset ID, such as primary subject or logo"),
       }),
     },
   );

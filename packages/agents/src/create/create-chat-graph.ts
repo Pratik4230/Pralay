@@ -6,6 +6,7 @@ import {
   type BaseMessage,
 } from "@langchain/core/messages";
 import { ChatOpenAI } from "@langchain/openai";
+import { randomUUID } from "node:crypto";
 
 import { getOpenAiApiKey } from "@repo/env";
 import type { CreateChatModelId } from "@repo/validators";
@@ -15,25 +16,46 @@ import {
   type CreateChatToolHandlers,
 } from "./create-chat-tools.js";
 import { CREATE_SYSTEM_PROMPT } from "./prompts.js";
+import {
+  assertSafeCreateChatPayload,
+  assertSafeCreateToolResult,
+  logCreateChatPayloadTelemetry,
+} from "./create-chat-payload-safety.js";
 
 export type CreateChatHistoryMessage = {
   role: "user" | "assistant" | "system";
   content: string;
 };
 
+/** Safe, compact context for references explicitly selected with @ on this turn. */
+export type CreateChatReferenceAsset = {
+  id: string;
+  name: string;
+  category: "person" | "logo" | "product" | "background" | "reference" | "other";
+  tags: string[];
+  mimeType: string;
+  width: number | null;
+  height: number | null;
+  scope: "workspace" | "project";
+  description: string | null;
+};
+
 export type RunCreateChatTurnInput = {
   chatModelId: CreateChatModelId;
   workspaceId: string;
   projectId: string;
+  threadId?: string;
+  userMessageId?: string;
   threadSummary: string | null;
   history: CreateChatHistoryMessage[];
   userPrompt: string;
   referenceAssetIds: string[];
+  /** Resolved metadata only. Never includes URLs, bytes, or image content. */
+  referenceAssets?: CreateChatReferenceAsset[];
 };
 
 export type CreateChatRunContext = {
   toolHandlers: CreateChatToolHandlers;
-  pendingVisionPreviews: Array<{ name: string; url: string }>;
 };
 
 const MAX_TOOL_ITERATIONS = 12;
@@ -45,7 +67,11 @@ function buildSystemContent(input: RunCreateChatTurnInput): string {
     parts.push(`Earlier conversation summary:\n${input.threadSummary.trim()}`);
   }
 
-  if (input.referenceAssetIds.length > 0) {
+  if (input.referenceAssets && input.referenceAssets.length > 0) {
+    parts.push(
+      `Resolved @ reference assets selected by the user for this message. These are already authorized and linked. Use them directly; do not search for, ask to confirm, or reject these assets again:\n${JSON.stringify(input.referenceAssets)}`,
+    );
+  } else if (input.referenceAssetIds.length > 0) {
     parts.push(
       `User attached reference asset IDs with @ on this message: ${input.referenceAssetIds.join(", ")}`,
     );
@@ -82,35 +108,6 @@ function extractMessageText(content: AIMessage["content"] | string | unknown): s
       .join("");
   }
   return "";
-}
-
-function flushVisionPreviews(
-  messages: BaseMessage[],
-  pending: Array<{ name: string; url: string }>,
-): BaseMessage[] {
-  if (pending.length === 0) {
-    return messages;
-  }
-
-  const items = pending.splice(0, pending.length);
-  const content: Array<
-    | { type: "text"; text: string }
-    | { type: "image_url"; image_url: { url: string } }
-  > = [
-    {
-      type: "text",
-      text: `Library asset previews: ${items.map((item) => item.name).join(", ")}`,
-    },
-  ];
-
-  for (const item of items) {
-    content.push({
-      type: "image_url",
-      image_url: { url: item.url },
-    });
-  }
-
-  return [...messages, new HumanMessage({ content })];
 }
 
 async function invokeToolHandler(
@@ -161,6 +158,10 @@ async function invokeToolHandler(
           referenceAssetIds: Array.isArray(args.referenceAssetIds)
             ? (args.referenceAssetIds as string[])
             : undefined,
+          referenceRoles:
+            args.referenceRoles && typeof args.referenceRoles === "object"
+              ? (args.referenceRoles as Record<string, string>)
+              : undefined,
         }),
       );
     case "get_generation_status":
@@ -187,11 +188,31 @@ export async function runCreateChatTurn(
   const modelWithTools = model.bindTools(tools);
 
   let messages: BaseMessage[] = toLangChainMessages(input);
+  const requestId = randomUUID();
 
   for (let step = 0; step < MAX_TOOL_ITERATIONS; step += 1) {
-    messages = flushVisionPreviews(messages, context.pendingVisionPreviews);
-
+    const payload = assertSafeCreateChatPayload(messages);
     const response = await modelWithTools.invoke(messages);
+    const metadata = response.response_metadata as {
+      headers?: Record<string, string>;
+    };
+    const headers = metadata.headers;
+    const rateLimits = headers
+      ? Object.fromEntries(
+          Object.entries(headers).filter(([key]) => key.startsWith("x-ratelimit-")),
+        )
+      : undefined;
+    logCreateChatPayloadTelemetry({
+      requestId,
+      threadId: input.threadId,
+      userMessageId: input.userMessageId,
+      iteration: step,
+      ...payload,
+      toolResultChars: 0,
+      inputTokens: response.usage_metadata?.input_tokens,
+      outputTokens: response.usage_metadata?.output_tokens,
+      rateLimits,
+    });
     const toolCalls = response.tool_calls ?? [];
 
     if (toolCalls.length === 0) {
@@ -219,6 +240,8 @@ export async function runCreateChatTurn(
           error instanceof Error ? error.message : "Tool execution failed";
         output = JSON.stringify({ error: message });
       }
+
+      assertSafeCreateToolResult(output);
 
       messages.push(
         new ToolMessage({

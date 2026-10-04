@@ -106,6 +106,11 @@ export function buildWorkspaceAssetKey(
   return `uploads/workspaces/${workspaceId}/assets/${base}-${uniqueSuffix}.${extension}`;
 }
 
+/** Bounded, metadata-free WebP derivative for UI and optional low-detail vision. */
+export function buildAssetThumbnailKey(workspaceId: string, assetId: string) {
+  return `uploads/workspaces/${workspaceId}/thumbnails/${assetId}.webp`;
+}
+
 /** Server-side output from async image generation (Inngest worker). */
 export function buildGeneratedAssetKey(
   workspaceId: string,
