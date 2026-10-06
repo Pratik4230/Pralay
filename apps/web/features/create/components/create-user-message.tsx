@@ -99,7 +99,7 @@ export const CreateUserMessage: FC = () => {
       </div>
 
       {generation ? (
-        <div className="col-span-full col-start-1 min-w-0 max-w-[min(100%,42rem)] justify-self-end">
+        <div className="col-span-full col-start-1 w-full min-w-0 max-w-[min(100%,42rem)] justify-self-end">
           <CreateGenerationCard
             workspaceId={workspaceId}
             projectId={projectId}

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { createApiError } from "../common/api-error.js";
 import {
   createProjectMessageBodySchema,
-  createReferenceAssetIdsSchema,
+  createReferenceCandidateAssetIdsSchema,
 } from "../create/create.js";
 import { assistantMessageGenerationSummarySchema } from "../generation/generation.js";
 
@@ -31,7 +31,7 @@ export const assistantMessageSchema = z.object({
   threadId: z.uuid(),
   role: assistantMessageRoleSchema,
   content: z.string(),
-  referenceAssetIds: createReferenceAssetIdsSchema,
+  referenceAssetIds: createReferenceCandidateAssetIdsSchema,
   generationId: z.uuid().nullable(),
   generation: assistantMessageGenerationSummarySchema.nullable().optional(),
   createdAt: z.string(),
@@ -79,7 +79,7 @@ export const sendProjectAssistantMessageBodySchema =
 export const sendProjectAssistantMessageResponseSchema = z.object({
   thread: assistantThreadSchema,
   userMessage: assistantMessageSchema,
-  assistantMessage: assistantMessageSchema,
+  assistantMessage: assistantMessageSchema.nullable(),
 });
 
 /**
@@ -126,7 +126,8 @@ export const assistantMessageStreamTextEventSchema = z.object({
 export const assistantMessageStreamDoneEventSchema = z.object({
   type: z.literal("done"),
   thread: assistantThreadSchema,
-  assistantMessage: assistantMessageSchema,
+  outcome: z.enum(["assistant_message", "generation_started"]),
+  assistantMessage: assistantMessageSchema.nullable(),
 });
 
 export const assistantMessageStreamErrorEventSchema = z.object({

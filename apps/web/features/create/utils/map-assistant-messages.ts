@@ -7,9 +7,11 @@ import type {
   CreateThreadMessage,
 } from "@/features/create/types/create-ui";
 import { findCachedWorkspaceAsset } from "@/features/create/utils/find-cached-workspace-asset";
-import {
-  mapGenerationSummaryToCreateBlock,
-} from "@/features/create/utils/map-generation-summary";
+import { mapGenerationSummaryToCreateBlock } from "@/features/create/utils/map-generation-summary";
+
+function isLegacyGenerationAcknowledgement(content: string) {
+  return /^\s*(queued\b|generation (?:queued|started)\b)/i.test(content);
+}
 
 function mapReferenceAssets(
   queryClient: QueryClient,
@@ -94,6 +96,15 @@ export function mapAssistantMessagesToCreateMessages(
   fallbackById?: Map<string, CreateAttachedAsset>,
 ): CreateThreadMessage[] {
   return messages
+    .filter((message, index) => {
+      if (message.role !== "assistant") return true;
+
+      const previousMessage = messages[index - 1];
+      return !(
+        (previousMessage?.role === "user" && previousMessage.generationId) ||
+        isLegacyGenerationAcknowledgement(message.content)
+      );
+    })
     .map((message) =>
       mapAssistantMessageToCreateMessage(
         queryClient,

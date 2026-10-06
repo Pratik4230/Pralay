@@ -37,6 +37,14 @@ export const createReferenceAssetIdsSchema = z
     "Reference assets must be unique",
   );
 
+export const createReferenceCandidateAssetIdsSchema = z
+  .array(z.uuid())
+  .max(24, "At most 24 reference candidates can be staged per message")
+  .refine(
+    (assetIds) => new Set(assetIds).size === assetIds.length,
+    "Reference candidates must be unique",
+  );
+
 export const createAttachedAssetRefSchema = z.object({
   assetId: z.uuid(),
   name: workspaceAssetDisplayNameSchema,
@@ -49,7 +57,7 @@ export const createAttachedAssetRefSchema = z.object({
 export const createProjectMessageBodySchema = z.object({
   threadId: z.uuid().optional(),
   prompt: createPromptTextSchema,
-  referenceAssetIds: createReferenceAssetIdsSchema.default([]),
+  referenceAssetIds: createReferenceCandidateAssetIdsSchema.default([]),
   chatModelId: createChatModelIdSchema.default("gpt-5.4-mini"),
   presetKey: createPresetKeySchema.optional(),
   aspectRatio: createAspectRatioSchema.optional(),
@@ -59,7 +67,9 @@ export const createProjectMessageBodySchema = z.object({
 
 export type CreateChatModelId = z.infer<typeof createChatModelIdSchema>;
 export type CreatePresetKey = z.infer<typeof createPresetKeySchema>;
-export type CreateAttachedAssetRef = z.infer<typeof createAttachedAssetRefSchema>;
+export type CreateAttachedAssetRef = z.infer<
+  typeof createAttachedAssetRefSchema
+>;
 export type CreateProjectMessageBody = z.infer<
   typeof createProjectMessageBodySchema
 >;
@@ -87,7 +97,9 @@ export const createAssetSuggestResponseSchema = z.object({
 export type SuggestWorkspaceAssetsQuery = z.infer<
   typeof suggestWorkspaceAssetsQuerySchema
 >;
-export type CreateAssetSuggestItem = z.infer<typeof createAssetSuggestItemSchema>;
+export type CreateAssetSuggestItem = z.infer<
+  typeof createAssetSuggestItemSchema
+>;
 export type CreateAssetSuggestResponse = z.infer<
   typeof createAssetSuggestResponseSchema
 >;

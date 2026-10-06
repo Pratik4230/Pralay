@@ -7,20 +7,26 @@ import { env } from "@/global/utils/env";
 import { ApiRequestError } from "@/global/utils/api-client";
 
 export type StreamProjectAssistantHandlers = {
-  onMeta: (event: Extract<
-    ReturnType<typeof assistantMessageStreamEventSchema.parse>,
-    { type: "meta" }
-  >) => void;
+  onMeta: (
+    event: Extract<
+      ReturnType<typeof assistantMessageStreamEventSchema.parse>,
+      { type: "meta" }
+    >,
+  ) => void;
   onTextDelta: (delta: string, fullText: string) => void;
-  onDone: (event: Extract<
-    ReturnType<typeof assistantMessageStreamEventSchema.parse>,
-    { type: "done" }
-  >) => void;
+  onDone: (
+    event: Extract<
+      ReturnType<typeof assistantMessageStreamEventSchema.parse>,
+      { type: "done" }
+    >,
+  ) => void;
   onError: (message: string) => void;
-  onGeneration?: (event: Extract<
-    ReturnType<typeof assistantMessageStreamEventSchema.parse>,
-    { type: "generation" }
-  >) => void;
+  onGeneration?: (
+    event: Extract<
+      ReturnType<typeof assistantMessageStreamEventSchema.parse>,
+      { type: "generation" }
+    >,
+  ) => void;
   signal?: AbortSignal;
 };
 
@@ -29,7 +35,7 @@ export type StreamProjectAssistantResult = {
   threadId?: string;
 };
 
-function processStreamLine(
+export function processProjectAssistantStreamLine(
   line: string,
   handlers: StreamProjectAssistantHandlers,
   fullTextRef: { value: string },
@@ -37,8 +43,19 @@ function processStreamLine(
 ): boolean {
   if (!line.trim()) return false;
 
-  const parsed = assistantMessageStreamEventSchema.safeParse(JSON.parse(line));
-  if (!parsed.success) return false;
+  let payload: unknown;
+  try {
+    payload = JSON.parse(line);
+  } catch (error) {
+    throw new Error("Assistant stream returned invalid JSON", { cause: error });
+  }
+
+  const parsed = assistantMessageStreamEventSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw new Error(
+      `Assistant stream returned an invalid event: ${parsed.error.issues[0]?.message ?? "schema mismatch"}`,
+    );
+  }
 
   if (parsed.data.type === "ping") {
     return false;
@@ -106,7 +123,14 @@ export async function streamProjectAssistantMessage(
   const threadIdRef: { value?: string } = {};
 
   const handleLine = (line: string) => {
-    if (processStreamLine(line, handlers, fullTextRef, threadIdRef)) {
+    if (
+      processProjectAssistantStreamLine(
+        line,
+        handlers,
+        fullTextRef,
+        threadIdRef,
+      )
+    ) {
       completed = true;
     }
   };
@@ -130,10 +154,7 @@ export async function streamProjectAssistantMessage(
       handleLine(buffer);
     }
   } catch (error) {
-    if (handlers.signal?.aborted) {
-      throw error;
-    }
-    return { completed, threadId: threadIdRef.value };
+    throw error;
   }
 
   return { completed, threadId: threadIdRef.value };

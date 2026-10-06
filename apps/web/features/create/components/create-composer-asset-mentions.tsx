@@ -22,7 +22,7 @@ type CreateComposerAssetMentionsProps = {
   projectId: string;
 };
 
-const MAX_GENERATION_REFERENCES = 5;
+const MAX_REFERENCE_CANDIDATES = 24;
 
 export const CreateComposerAssetMentions: FC<
   CreateComposerAssetMentionsProps
@@ -42,22 +42,20 @@ export const CreateComposerAssetMentions: FC<
 
   draftRef.current = draft;
 
-  const setStagedAssets = useCreateProjectStore((state) => state.setStagedAssets);
+  const setStagedAssets = useCreateProjectStore(
+    (state) => state.setStagedAssets,
+  );
   const stagedAssetCount = useCreateProjectStore(
     (state) => state.byProject[projectId]?.stagedAssets.length ?? 0,
   );
 
   const { options: mentionMatches, isLoading: mentionLoading } =
-    useCreateAssetSuggest(
-      workspaceId,
-      projectId,
-      mentionQuery,
-      mentionOpen,
-    );
+    useCreateAssetSuggest(workspaceId, projectId, mentionQuery, mentionOpen);
 
-  useEffect(() => subscribeCaretMove(() => setCaretTick((value) => value + 1)), [
-    subscribeCaretMove,
-  ]);
+  useEffect(
+    () => subscribeCaretMove(() => setCaretTick((value) => value + 1)),
+    [subscribeCaretMove],
+  );
 
   useEffect(() => {
     if (skipMentionDetectionRef.current) {
@@ -99,8 +97,10 @@ export const CreateComposerAssetMentions: FC<
 
       const alreadyStaged = useCreateProjectStore
         .getState()
-        .byProject[projectId]?.stagedAssets.some((item) => item.id === option.id);
-      if (!alreadyStaged && stagedAssetCount >= MAX_GENERATION_REFERENCES) {
+        .byProject[projectId]?.stagedAssets.some(
+          (item) => item.id === option.id,
+        );
+      if (!alreadyStaged && stagedAssetCount >= MAX_REFERENCE_CANDIDATES) {
         return;
       }
 
@@ -179,9 +179,9 @@ export const CreateComposerAssetMentions: FC<
         <p className="px-3 py-2 text-xs text-muted-foreground">
           Searching assets…
         </p>
-      ) : stagedAssetCount >= MAX_GENERATION_REFERENCES ? (
+      ) : stagedAssetCount >= MAX_REFERENCE_CANDIDATES ? (
         <p className="px-3 py-2 text-xs text-muted-foreground">
-          Up to 5 references can guide one image. Remove a mention to choose another.
+          Up to 24 candidates can be staged. Remove a mention to choose another.
         </p>
       ) : mentionMatches.length > 0 ? (
         <ul ref={listRef} className="max-h-48 overflow-y-auto p-1">
@@ -207,7 +207,8 @@ export const CreateComposerAssetMentions: FC<
                   <div
                     className={cn(
                       "relative size-8 shrink-0 overflow-hidden rounded-md bg-muted",
-                      isActive && "ring-2 ring-primary ring-offset-1 ring-offset-popover",
+                      isActive &&
+                        "ring-2 ring-primary ring-offset-1 ring-offset-popover",
                     )}
                   >
                     {thumbUrl ? (
@@ -221,12 +222,7 @@ export const CreateComposerAssetMentions: FC<
                       />
                     ) : null}
                   </div>
-                  <span
-                    className={cn(
-                      "truncate",
-                      isActive && "font-semibold",
-                    )}
-                  >
+                  <span className={cn("truncate", isActive && "font-semibold")}>
                     {option.name}
                   </span>
                 </button>

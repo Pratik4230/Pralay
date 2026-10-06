@@ -1,5 +1,6 @@
 import {
   runOpenAiWebSearch,
+  type CreateChatReferenceCandidate,
   type CreateChatToolHandlers,
   type InspectAssetsToolResult,
 } from "@repo/agents";
@@ -19,15 +20,10 @@ import {
 } from "../../generations/services/project-generations.service.js";
 import type { MessageRow } from "./project-assistant.service.js";
 import { mapMessage } from "./project-assistant.service.js";
+import { validateCreateGenerationReferenceSelection } from "./create-generation-reference-selection.js";
 
 const CREATE_UPLOAD_HINT =
-    "Use the + attach button in the composer to upload a reference image and set its name (example: jonathan), or type @ to pick from the library.";
-
-const VISUAL_REQUEST_PATTERN = /\b(create|generate|make|design|render|produce|illustrate|draw|thumbnail|image|poster|visual|graphic|banner|ad)\b/i;
-
-function explicitlyRequestsVisual(prompt: string) {
-  return VISUAL_REQUEST_PATTERN.test(prompt);
-}
+  "Use the + attach button in the composer to upload a reference image and set its name (example: jonathan), or type @ to pick from the library.";
 
 async function assertAssetsForProject(
   workspaceId: string,
@@ -108,26 +104,26 @@ export function createCreateChatToolHandlers(input: {
   getUserMessageRow: () => MessageRow;
   setUserMessageRow: (row: MessageRow) => void;
   onGenerationLinked?: (userMessage: ReturnType<typeof mapMessage>) => void;
+  referenceCandidates: CreateChatReferenceCandidate[];
 }): CreateChatToolHandlers {
-  const mergeReferenceAssetIds = (extra: string[]) => {
-    const merged = [
-      ...new Set([...input.body.referenceAssetIds, ...extra]),
-    ].slice(0, 12);
-    return merged;
-  };
+  const candidateById = new Map(
+    input.referenceCandidates.map((candidate) => [candidate.id, candidate]),
+  );
+  const authorizedCandidateIds = new Set(candidateById.keys());
 
-  const persistReferenceAssetIds = async (assetIds: string[]) => {
-    const merged = mergeReferenceAssetIds(assetIds);
-    await assertAssetsForProject(
-      input.workspaceId,
-      input.projectId,
-      merged,
-    );
+  const persistSelectedReferenceAssetIds = async (assetIds: string[]) => {
+    if (assetIds.length > 5 || new Set(assetIds).size !== assetIds.length) {
+      throw new InvalidGenerationInputAssetsError();
+    }
+    if (assetIds.some((assetId) => !authorizedCandidateIds.has(assetId))) {
+      throw new InvalidGenerationInputAssetsError();
+    }
+    await assertAssetsForProject(input.workspaceId, input.projectId, assetIds);
 
     const current = input.getUserMessageRow();
     const [updated] = await db
       .update(assistantMessages)
-      .set({ referenceAssetIds: merged })
+      .set({ referenceAssetIds: assetIds })
       .where(
         and(
           eq(assistantMessages.id, current.id),
@@ -141,7 +137,7 @@ export function createCreateChatToolHandlers(input: {
     }
 
     input.setUserMessageRow(updated);
-    return { row: updated, merged };
+    return updated;
   };
 
   return {
@@ -153,6 +149,11 @@ export function createCreateChatToolHandlers(input: {
         query,
         limit ?? 8,
       );
+      for (const item of result.items) {
+        if (item.confidence === "high") {
+          authorizedCandidateIds.add(item.id);
+        }
+      }
 
       return {
         query: result.query,
@@ -184,25 +185,6 @@ export function createCreateChatToolHandlers(input: {
       };
     },
 
-    linkReferenceAssets: async ({ assetIds }) => {
-      const { merged } = await persistReferenceAssetIds(assetIds);
-      const rows = await db
-        .select({ id: assets.id, name: assets.name })
-        .from(assets)
-        .where(inArray(assets.id, merged));
-
-      const linkedNames = rows.map((row) => `@${row.name}`);
-
-      return {
-        referenceAssetIds: merged,
-        linkedNames,
-        message:
-          linkedNames.length > 0
-            ? `Linked ${linkedNames.join(", ")} to this message.`
-            : "References linked.",
-      };
-    },
-
     webSearch: async ({ query }) => {
       try {
         const summary = await runOpenAiWebSearch(query);
@@ -214,20 +196,8 @@ export function createCreateChatToolHandlers(input: {
       }
     },
 
-    startGeneration: async ({
-      aspectRatio,
-      prompt,
-      referenceAssetIds,
-      referenceRoles,
-    }) => {
+    startGeneration: async ({ mode, aspectRatio, prompt, references }) => {
       const current = input.getUserMessageRow();
-      if (!explicitlyRequestsVisual(input.body.prompt)) {
-        return {
-          generationId: "",
-          status: "not_requested",
-          message: "Generation was not queued because this message does not explicitly request a new visual.",
-        };
-      }
       if (current.generationId) {
         return {
           generationId: current.generationId,
@@ -236,50 +206,43 @@ export function createCreateChatToolHandlers(input: {
         };
       }
 
-      if (current.referenceAssetIds.length > 5) {
+      const selectedReferences = references ?? [];
+      const selection = validateCreateGenerationReferenceSelection({
+        mode,
+        references: selectedReferences,
+        authorizedCandidateIds,
+        authorizedCandidates: candidateById,
+      });
+      if (!selection.ok) {
         return {
           generationId: "",
           status: "failed",
-          message:
-            "Grok supports up to five image references. Ask the user which five references should guide this image.",
+          message: selection.message,
         };
       }
+      const selectedIds = selection.assetIds;
 
-      let mergedRefs = current.referenceAssetIds;
-      if (referenceAssetIds && referenceAssetIds.length > 0) {
-        const proposedRefs = [
-          ...new Set([...current.referenceAssetIds, ...referenceAssetIds]),
-        ];
-        if (proposedRefs.length > 5) {
-          return {
-            generationId: "",
-            status: "failed",
-            message:
-              "Grok supports up to five image references. Ask the user which five references should guide this image.",
-          };
-        }
-        const persisted = await persistReferenceAssetIds(referenceAssetIds);
-        mergedRefs = persisted.merged;
-      }
-
-      const validReferenceRoles = Object.fromEntries(
-        Object.entries(referenceRoles ?? {}).filter(
-          ([assetId, role]) => mergedRefs.includes(assetId) && role.trim().length > 0,
-        ),
+      const referenceRoles = Object.fromEntries(
+        selectedReferences.map((reference) => [
+          reference.assetId,
+          reference.role,
+        ]),
       );
 
       const generationPrompt = prompt?.trim() || input.body.prompt;
 
       try {
+        await persistSelectedReferenceAssetIds(selectedIds);
         const linked = await attachGenerationToAssistantUserMessage({
           actorUserId: input.actorUserId,
           workspaceId: input.workspaceId,
           projectId: input.projectId,
           messageId: current.id,
           prompt: generationPrompt,
-          inputAssetIds: mergedRefs,
+          inputAssetIds: selectedIds,
           aspectRatio: aspectRatio ?? input.body.aspectRatio,
-          referenceRoles: validReferenceRoles,
+          referenceRoles,
+          type: mode,
         });
 
         input.setUserMessageRow(linked.userMessageRow);

@@ -5,6 +5,7 @@ import {
   type CreateChatHistoryMessage,
   type CreateChatRunContext,
   type CreateChatReferenceAsset,
+  type CreateChatReferenceCandidate,
 } from "@repo/agents";
 import { hasOpenAiApiKey } from "@repo/env";
 import type {
@@ -33,6 +34,7 @@ export type CreateAssistantChatContext = {
   getUserMessageRow: () => MessageRow;
   setUserMessageRow: (row: MessageRow) => void;
   onGenerationLinked?: (userMessage: ReturnType<typeof mapMessage>) => void;
+  referenceCandidates: CreateChatReferenceCandidate[];
 };
 
 function buildRunContext(
@@ -54,9 +56,12 @@ type ChatTurnInput = {
   userPrompt: string;
   referenceAssetIds: string[];
   referenceAssets?: CreateChatReferenceAsset[];
+  referenceCandidates?: CreateChatReferenceCandidate[];
 };
 
-async function withResolvedReferenceAssets(input: ChatTurnInput): Promise<ChatTurnInput> {
+async function withResolvedReferenceAssets(
+  input: ChatTurnInput,
+): Promise<ChatTurnInput> {
   if (input.referenceAssetIds.length === 0) return input;
 
   return {

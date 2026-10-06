@@ -23,7 +23,10 @@ import {
   decodeAssistantMessageListCursor,
   encodeAssistantMessageListCursor,
 } from "./assistant-message-list-cursor.js";
-import { loadCreateChatHistory } from "./create-chat-context.js";
+import {
+  loadCreateChatHistory,
+  loadCreateReferenceCandidates,
+} from "./create-chat-context.js";
 import { completeAssistantTurn } from "./create-assistant-stream.service.js";
 import { inngest } from "../../../inngest/client.js";
 import { generateCreateAssistantReply } from "./create-assistant-ai.service.js";
@@ -366,6 +369,16 @@ export async function sendProjectAssistantMessage(
     id: userMessageRow.id,
     createdAt: userMessageRow.createdAt,
   });
+  const referenceCandidates = await loadCreateReferenceCandidates({
+    workspaceId,
+    projectId,
+    threadId: threadRow.id,
+    currentReferenceAssetIds: input.referenceAssetIds,
+    beforeMessage: {
+      id: userMessageRow.id,
+      createdAt: userMessageRow.createdAt,
+    },
+  });
 
   const userMessageRef = { row: userMessageRow };
 
@@ -380,6 +393,7 @@ export async function sendProjectAssistantMessage(
       history,
       userPrompt: input.prompt,
       referenceAssetIds: input.referenceAssetIds,
+      referenceCandidates,
     },
     {
       actorUserId,
@@ -390,6 +404,7 @@ export async function sendProjectAssistantMessage(
       setUserMessageRow: (row) => {
         userMessageRef.row = row;
       },
+      referenceCandidates,
     },
   );
 
@@ -397,7 +412,7 @@ export async function sendProjectAssistantMessage(
     threadRow,
     userMessageRow: userMessageRef.row,
     prompt: input.prompt,
-    assistantContent,
+    assistantContent: userMessageRef.row.generationId ? null : assistantContent,
   });
 
   return {
@@ -438,6 +453,16 @@ export async function processProjectAssistantTurn(params: {
       id: userMessageRef.row.id,
       createdAt: userMessageRef.row.createdAt,
     });
+    const referenceCandidates = await loadCreateReferenceCandidates({
+      workspaceId,
+      projectId,
+      threadId: threadRow.id,
+      currentReferenceAssetIds: body.referenceAssetIds,
+      beforeMessage: {
+        id: userMessageRef.row.id,
+        createdAt: userMessageRef.row.createdAt,
+      },
+    });
 
     const assistantContent = await generateCreateAssistantReply(
       {
@@ -450,6 +475,7 @@ export async function processProjectAssistantTurn(params: {
         history,
         userPrompt: body.prompt,
         referenceAssetIds: body.referenceAssetIds,
+        referenceCandidates,
       },
       {
         actorUserId,
@@ -460,6 +486,7 @@ export async function processProjectAssistantTurn(params: {
         setUserMessageRow: (row) => {
           userMessageRef.row = row;
         },
+        referenceCandidates,
       },
     );
 
@@ -467,7 +494,9 @@ export async function processProjectAssistantTurn(params: {
       threadRow,
       userMessageRow: userMessageRef.row,
       prompt: body.prompt,
-      assistantContent,
+      assistantContent: userMessageRef.row.generationId
+        ? null
+        : assistantContent,
     });
   } catch (error) {
     console.error("[create-assistant] background agent turn failed", error);

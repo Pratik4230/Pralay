@@ -30,9 +30,16 @@ type XaiImageResponse = {
 export async function editImagineWithReferences(
   input: ImagineEditInput,
 ): Promise<ImagineEditResult> {
-  const urls = input.referenceImageUrls.filter(Boolean).slice(0, 5);
+  const urls = input.referenceImageUrls.filter(Boolean);
   if (urls.length === 0) {
-    throw new Error("editImagineWithReferences requires at least one image URL");
+    throw new Error(
+      "editImagineWithReferences requires at least one image URL",
+    );
+  }
+  if (urls.length > 5) {
+    throw new Error(
+      "editImagineWithReferences supports at most five image URLs",
+    );
   }
 
   const model = input.model ?? GROK_IMAGINE_EDIT_MODEL;
@@ -60,8 +67,7 @@ export async function editImagineWithReferences(
 
   if (!response.ok) {
     const message =
-      payload.error?.message ??
-      `xAI image edit failed (${response.status})`;
+      payload.error?.message ?? `xAI image edit failed (${response.status})`;
     throw new Error(message);
   }
 

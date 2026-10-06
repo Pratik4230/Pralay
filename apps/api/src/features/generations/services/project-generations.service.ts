@@ -1,11 +1,14 @@
 import { and, eq, isNull, or, inArray } from "drizzle-orm";
 
-import {
-  generateProjectImage,
-  resolveImageGenerationDefaults,
-} from "@repo/ai";
+import { generateProjectImage, resolveImageGenerationDefaults } from "@repo/ai";
 import { db } from "@repo/db";
-import { assets, assistantMessages, generationEvents, generations, projectAssets } from "@repo/db/schema";
+import {
+  assets,
+  assistantMessages,
+  generationEvents,
+  generations,
+  projectAssets,
+} from "@repo/db/schema";
 import { hasXaiApiKey } from "@repo/env";
 import {
   buildGeneratedAssetKey,
@@ -35,6 +38,13 @@ export class InvalidGenerationInputAssetsError extends Error {
   constructor() {
     super("One or more reference assets are invalid for this project");
     this.name = "InvalidGenerationInputAssetsError";
+  }
+}
+
+export class InvalidGenerationReferenceCountError extends Error {
+  constructor() {
+    super("At most five unique reference images are supported");
+    this.name = "InvalidGenerationReferenceCountError";
   }
 }
 
@@ -189,6 +199,12 @@ async function loadReferenceImageUrls(
   if (inputAssetIds.length === 0) {
     return [];
   }
+  if (
+    inputAssetIds.length > 5 ||
+    new Set(inputAssetIds).size !== inputAssetIds.length
+  ) {
+    throw new InvalidGenerationReferenceCountError();
+  }
 
   await assertInputAssets(workspaceId, projectId, inputAssetIds);
 
@@ -201,16 +217,14 @@ async function loadReferenceImageUrls(
     .from(assets)
     .where(
       and(
-        inArray(assets.id, inputAssetIds.slice(0, 5)),
+        inArray(assets.id, inputAssetIds),
         eq(assets.workspaceId, workspaceId),
         isNull(assets.deletedAt),
       ),
     );
 
   const order = new Map(inputAssetIds.map((id, index) => [id, index]));
-  rows.sort(
-    (a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0),
-  );
+  rows.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
 
   const urls: string[] = [];
   for (const row of rows) {
@@ -223,7 +237,7 @@ async function loadReferenceImageUrls(
     );
   }
 
-  return urls.slice(0, 5);
+  return urls;
 }
 
 async function recordGenerationEvent(
@@ -246,12 +260,19 @@ export type InsertProjectGenerationInput = {
   inputAssetIds: string[];
   aspectRatio?: string | null;
   referenceRoles?: Record<string, string>;
+  type?: GenerationRow["type"];
 };
 
 export async function insertQueuedProjectGeneration(
   input: InsertProjectGenerationInput,
 ) {
-  const inputAssetIds = [...new Set(input.inputAssetIds)].slice(0, 5);
+  if (
+    input.inputAssetIds.length > 5 ||
+    new Set(input.inputAssetIds).size !== input.inputAssetIds.length
+  ) {
+    throw new InvalidGenerationReferenceCountError();
+  }
+  const inputAssetIds = input.inputAssetIds;
   const referenceRoles = Object.fromEntries(
     Object.entries(input.referenceRoles ?? {}).filter(([assetId]) =>
       inputAssetIds.includes(assetId),
@@ -266,7 +287,7 @@ export async function insertQueuedProjectGeneration(
         workspaceId: input.workspaceId,
         projectId: input.projectId,
         createdBy: input.createdBy,
-        type: "generate",
+        type: input.type ?? "generate",
         status: "queued",
         prompt: input.prompt,
         inputAssetIds,
@@ -309,6 +330,7 @@ export async function attachGenerationToAssistantUserMessage(input: {
   inputAssetIds: string[];
   aspectRatio?: string | null;
   referenceRoles?: Record<string, string>;
+  type?: GenerationRow["type"];
 }) {
   if (!isStorageConfigured()) {
     throw new StorageNotConfiguredError();
@@ -328,6 +350,7 @@ export async function attachGenerationToAssistantUserMessage(input: {
     inputAssetIds: input.inputAssetIds,
     aspectRatio: input.aspectRatio,
     referenceRoles: input.referenceRoles,
+    type: input.type,
   });
 
   const [updatedMessage] = await db
@@ -405,9 +428,7 @@ export async function runGenerationJob(generationId: string) {
   const [row] = await db
     .select()
     .from(generations)
-    .where(
-      and(eq(generations.id, generationId), isNull(generations.deletedAt)),
-    )
+    .where(and(eq(generations.id, generationId), isNull(generations.deletedAt)))
     .limit(1);
 
   if (!row) {

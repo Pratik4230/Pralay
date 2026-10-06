@@ -31,13 +31,21 @@ export type CreateChatHistoryMessage = {
 export type CreateChatReferenceAsset = {
   id: string;
   name: string;
-  category: "person" | "logo" | "product" | "background" | "reference" | "other";
+  category:
+    "person" | "logo" | "product" | "background" | "reference" | "other";
   tags: string[];
   mimeType: string;
   width: number | null;
   height: number | null;
   scope: "workspace" | "project";
   description: string | null;
+};
+
+export type CreateChatReferenceCandidate = CreateChatReferenceAsset & {
+  provenance: "current" | "history" | "generated";
+  sourceMessageId: string | null;
+  sourceGenerationId: string | null;
+  isGenerated: boolean;
 };
 
 export type RunCreateChatTurnInput = {
@@ -52,6 +60,8 @@ export type RunCreateChatTurnInput = {
   referenceAssetIds: string[];
   /** Resolved metadata only. Never includes URLs, bytes, or image content. */
   referenceAssets?: CreateChatReferenceAsset[];
+  /** Authorized metadata-only candidates collected from this thread. */
+  referenceCandidates?: CreateChatReferenceCandidate[];
 };
 
 export type CreateChatRunContext = {
@@ -69,11 +79,17 @@ function buildSystemContent(input: RunCreateChatTurnInput): string {
 
   if (input.referenceAssets && input.referenceAssets.length > 0) {
     parts.push(
-      `Resolved @ reference assets selected by the user for this message. These are already authorized and linked. Use them directly; do not search for, ask to confirm, or reject these assets again:\n${JSON.stringify(input.referenceAssets)}`,
+      `Resolved @ reference assets selected by the user for this message. Treat these as strong authorized candidates. Do not search for, ask to confirm, or reject these assets again, but choose only those useful to the result:\n${JSON.stringify(input.referenceAssets)}`,
     );
   } else if (input.referenceAssetIds.length > 0) {
     parts.push(
       `User attached reference asset IDs with @ on this message: ${input.referenceAssetIds.join(", ")}`,
+    );
+  }
+
+  if (input.referenceCandidates && input.referenceCandidates.length > 0) {
+    parts.push(
+      `Authorized reference candidates from the current message and this thread. You may choose zero to five of these in start_generation. The list is metadata only; never invent IDs. Provenance "generated" means a completed output that can be used as the base for a variation:\n${JSON.stringify(input.referenceCandidates)}`,
     );
   }
 
@@ -98,14 +114,14 @@ function toLangChainMessages(input: RunCreateChatTurnInput): BaseMessage[] {
   return messages;
 }
 
-function extractMessageText(content: AIMessage["content"] | string | unknown): string {
+function extractMessageText(
+  content: AIMessage["content"] | string | unknown,
+): string {
   if (typeof content === "string") {
     return content;
   }
   if (Array.isArray(content)) {
-    return content
-      .map((part) => ("text" in part ? part.text : ""))
-      .join("");
+    return content.map((part) => ("text" in part ? part.text : "")).join("");
   }
   return "";
 }
@@ -120,21 +136,12 @@ async function invokeToolHandler(
       return JSON.stringify(
         await handlers.searchAssets({
           query: String(args.query ?? ""),
-          limit:
-            typeof args.limit === "number" ? args.limit : undefined,
+          limit: typeof args.limit === "number" ? args.limit : undefined,
         }),
       );
     case "inspect_assets":
       return JSON.stringify(
         await handlers.inspectAssets({
-          assetIds: Array.isArray(args.assetIds)
-            ? (args.assetIds as string[])
-            : [],
-        }),
-      );
-    case "link_reference_assets":
-      return JSON.stringify(
-        await handlers.linkReferenceAssets({
           assetIds: Array.isArray(args.assetIds)
             ? (args.assetIds as string[])
             : [],
@@ -149,19 +156,16 @@ async function invokeToolHandler(
     case "start_generation":
       return JSON.stringify(
         await handlers.startGeneration({
+          mode:
+            args.mode === "edit" || args.mode === "variation"
+              ? args.mode
+              : "generate",
           aspectRatio:
-            typeof args.aspectRatio === "string"
-              ? args.aspectRatio
-              : undefined,
-          prompt:
-            typeof args.prompt === "string" ? args.prompt : undefined,
-          referenceAssetIds: Array.isArray(args.referenceAssetIds)
-            ? (args.referenceAssetIds as string[])
+            typeof args.aspectRatio === "string" ? args.aspectRatio : undefined,
+          prompt: typeof args.prompt === "string" ? args.prompt : undefined,
+          references: Array.isArray(args.references)
+            ? (args.references as Array<{ assetId: string; role: string }>)
             : undefined,
-          referenceRoles:
-            args.referenceRoles && typeof args.referenceRoles === "object"
-              ? (args.referenceRoles as Record<string, string>)
-              : undefined,
         }),
       );
     case "get_generation_status":
@@ -199,7 +203,9 @@ export async function runCreateChatTurn(
     const headers = metadata.headers;
     const rateLimits = headers
       ? Object.fromEntries(
-          Object.entries(headers).filter(([key]) => key.startsWith("x-ratelimit-")),
+          Object.entries(headers).filter(([key]) =>
+            key.startsWith("x-ratelimit-"),
+          ),
         )
       : undefined;
     logCreateChatPayloadTelemetry({

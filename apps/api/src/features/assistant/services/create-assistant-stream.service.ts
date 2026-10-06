@@ -9,7 +9,10 @@ import {
   maybeGenerateCreateThreadTitle,
   type CreateAssistantChatContext,
 } from "./create-assistant-ai.service.js";
-import { loadCreateChatHistory } from "./create-chat-context.js";
+import {
+  loadCreateChatHistory,
+  loadCreateReferenceCandidates,
+} from "./create-chat-context.js";
 import {
   attachGenerationToAssistantUserMessage,
   StorageNotConfiguredError,
@@ -21,6 +24,7 @@ import {
   mapThread,
   persistProjectAssistantUserMessage,
 } from "./project-assistant.service.js";
+import { createHeartbeatNdjsonStream } from "./heartbeat-ndjson-stream.js";
 
 export type AssistantMessageStreamEvent =
   | {
@@ -36,7 +40,8 @@ export type AssistantMessageStreamEvent =
   | {
       type: "done";
       thread: ReturnType<typeof mapThread>;
-      assistantMessage: ReturnType<typeof mapMessage>;
+      outcome: "assistant_message" | "generation_started";
+      assistantMessage: ReturnType<typeof mapMessage> | null;
     }
   | { type: "error"; message: string }
   | { type: "ping" };
@@ -45,11 +50,13 @@ function encodeStreamEvent(event: AssistantMessageStreamEvent): Uint8Array {
   return new TextEncoder().encode(`${JSON.stringify(event)}\n`);
 }
 
+const STREAM_HEARTBEAT_MS = 8_000;
+
 export async function completeAssistantTurn(input: {
   threadRow: ThreadRow;
   userMessageRow: MessageRow;
   prompt: string;
-  assistantContent: string;
+  assistantContent: string | null;
 }) {
   const countResult = await db
     .select({ count: sql<number>`count(*)::int` })
@@ -65,17 +72,21 @@ export async function completeAssistantTurn(input: {
 
   const now = new Date();
 
-  const [assistantMessageRow] = await db
-    .insert(assistantMessages)
-    .values({
-      threadId: input.threadRow.id,
-      role: "assistant",
-      content: input.assistantContent,
-      referenceAssetIds: [],
-    })
-    .returning();
+  const assistantMessageRow = input.assistantContent
+    ? (
+        await db
+          .insert(assistantMessages)
+          .values({
+            threadId: input.threadRow.id,
+            role: "assistant",
+            content: input.assistantContent,
+            referenceAssetIds: [],
+          })
+          .returning()
+      )[0]
+    : null;
 
-  if (!assistantMessageRow) {
+  if (input.assistantContent && !assistantMessageRow) {
     throw new Error("Failed to save assistant message");
   }
 
@@ -90,7 +101,9 @@ export async function completeAssistantTurn(input: {
 
   return {
     thread: mapThread(updatedThread ?? { ...input.threadRow, updatedAt: now }),
-    assistantMessage: mapMessage(assistantMessageRow),
+    assistantMessage: assistantMessageRow
+      ? mapMessage(assistantMessageRow)
+      : null,
   };
 }
 
@@ -101,6 +114,7 @@ function buildChatContext(
   body: SendProjectAssistantMessageBody,
   userMessageRef: { row: MessageRow },
   onGenerationLinked: CreateAssistantChatContext["onGenerationLinked"],
+  referenceCandidates: CreateAssistantChatContext["referenceCandidates"],
 ): CreateAssistantChatContext {
   return {
     actorUserId,
@@ -112,6 +126,7 @@ function buildChatContext(
       userMessageRef.row = row;
     },
     onGenerationLinked,
+    referenceCandidates,
   };
 }
 
@@ -181,6 +196,16 @@ export async function* iterateProjectAssistantMessageStream(
       id: userMessageRow.id,
       createdAt: userMessageRow.createdAt,
     });
+    const referenceCandidates = await loadCreateReferenceCandidates({
+      workspaceId,
+      projectId,
+      threadId: threadRow.id,
+      currentReferenceAssetIds: body.referenceAssetIds,
+      beforeMessage: {
+        id: userMessageRow.id,
+        createdAt: userMessageRow.createdAt,
+      },
+    });
 
     let generationLinkedUserMessage: ReturnType<typeof mapMessage> | null =
       null;
@@ -194,6 +219,7 @@ export async function* iterateProjectAssistantMessageStream(
       (userMessage) => {
         generationLinkedUserMessage = userMessage;
       },
+      referenceCandidates,
     );
 
     const turnInput = {
@@ -206,6 +232,7 @@ export async function* iterateProjectAssistantMessageStream(
       history,
       userPrompt: body.prompt,
       referenceAssetIds: body.referenceAssetIds,
+      referenceCandidates,
     };
 
     // Full agent turn — tool calls (searchAssets, startGeneration, etc.) run
@@ -220,10 +247,15 @@ export async function* iterateProjectAssistantMessageStream(
       yield { type: "generation", userMessage: generationLinkedUserMessage };
     }
 
-    // ── 5. Stream the final text in small chunks (fast, < 1 s) ───────────────
-    const chunkSize = 48;
-    for (let i = 0; i < assistantContent.length; i += chunkSize) {
-      yield { type: "text", delta: assistantContent.slice(i, i + chunkSize) };
+    const generationStarted = generationLinkedUserMessage !== null;
+
+    // ── 5. Stream only conversational / clarification text. Generation turns
+    // render through the generation card and intentionally have no assistant ack.
+    if (!generationStarted) {
+      const chunkSize = 48;
+      for (let i = 0; i < assistantContent.length; i += chunkSize) {
+        yield { type: "text", delta: assistantContent.slice(i, i + chunkSize) };
+      }
     }
 
     // ── 6. Persist assistant message + optionally update thread title ─────────
@@ -231,12 +263,13 @@ export async function* iterateProjectAssistantMessageStream(
       threadRow,
       userMessageRow: userMessageRef.row,
       prompt: body.prompt,
-      assistantContent,
+      assistantContent: generationStarted ? null : assistantContent,
     });
 
     yield {
       type: "done",
       thread: completed.thread,
+      outcome: generationStarted ? "generation_started" : "assistant_message",
       assistantMessage: completed.assistantMessage,
     };
   } catch (error) {
@@ -265,23 +298,10 @@ export function createProjectAssistantMessageStream(
     projectId,
     body,
   );
-  const iterator = events[Symbol.asyncIterator]();
-
-  return new ReadableStream({
-    async pull(controller) {
-      try {
-        const { value, done } = await iterator.next();
-        if (done) {
-          controller.close();
-          return;
-        }
-        controller.enqueue(encodeStreamEvent(value));
-      } catch (error) {
-        controller.error(error);
-      }
-    },
-    cancel() {
-      // Best-effort abort; generator cleanup handled by GC.
-    },
+  return createHeartbeatNdjsonStream({
+    events,
+    encode: encodeStreamEvent,
+    heartbeatEvent: { type: "ping" },
+    heartbeatMs: STREAM_HEARTBEAT_MS,
   });
 }

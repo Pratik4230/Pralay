@@ -4,13 +4,15 @@ export {
   streamCreateChatTurn,
   type CreateChatHistoryMessage,
   type CreateChatReferenceAsset,
+  type CreateChatReferenceCandidate,
   type CreateChatRunContext,
   type RunCreateChatTurnInput,
 } from "./create/create-chat-graph.js";
 export {
   type GetGenerationStatusToolResult,
   type InspectAssetsToolResult,
-  type LinkReferenceAssetsToolResult,
+  type CreateGenerationMode,
+  type CreateGenerationReference,
   type SearchAssetsToolResult,
   type StartGenerationToolResult,
   type WebSearchToolResult,

@@ -9,6 +9,13 @@ export type StartGenerationToolResult = {
   message: string;
 };
 
+export type CreateGenerationMode = "generate" | "edit" | "variation";
+
+export type CreateGenerationReference = {
+  assetId: string;
+  role: string;
+};
+
 export type GetGenerationStatusToolResult = {
   generationId: string;
   status: string;
@@ -34,7 +41,8 @@ export type InspectAssetsToolResult = {
   assets: Array<{
     id: string;
     name: string;
-    category: "person" | "logo" | "product" | "background" | "reference" | "other";
+    category:
+      "person" | "logo" | "product" | "background" | "reference" | "other";
     tags: string[];
     mimeType: string;
     width: number | null;
@@ -42,12 +50,6 @@ export type InspectAssetsToolResult = {
     scope: "workspace" | "project";
     description: string | null;
   }>;
-  message: string;
-};
-
-export type LinkReferenceAssetsToolResult = {
-  referenceAssetIds: string[];
-  linkedNames: string[];
   message: string;
 };
 
@@ -63,15 +65,12 @@ export type CreateChatToolHandlers = {
   inspectAssets: (input: {
     assetIds: string[];
   }) => Promise<InspectAssetsToolResult>;
-  linkReferenceAssets: (input: {
-    assetIds: string[];
-  }) => Promise<LinkReferenceAssetsToolResult>;
   webSearch: (input: { query: string }) => Promise<WebSearchToolResult>;
   startGeneration: (input: {
+    mode: CreateGenerationMode;
     aspectRatio?: string;
     prompt?: string;
-    referenceAssetIds?: string[];
-    referenceRoles?: Record<string, string>;
+    references?: CreateGenerationReference[];
   }) => Promise<StartGenerationToolResult>;
   getGenerationStatus: (input: {
     generationId: string;
@@ -110,21 +109,6 @@ export function createCreateChatTools(handlers: CreateChatToolHandlers) {
     },
   );
 
-  const linkReferenceAssets = tool(
-    async (input) => {
-      const result = await handlers.linkReferenceAssets(input);
-      return JSON.stringify(result);
-    },
-    {
-      name: "link_reference_assets",
-      description:
-        "Attach resolved library asset IDs to the current user message. Call after high-confidence matches or user confirmation.",
-      schema: z.object({
-        assetIds: z.array(z.uuid()).min(1).max(12),
-      }),
-    },
-  );
-
   const webSearch = tool(
     async (input) => {
       const result = await handlers.webSearch(input);
@@ -148,8 +132,9 @@ export function createCreateChatTools(handlers: CreateChatToolHandlers) {
     {
       name: "start_generation",
       description:
-        "Queue async image generation (Grok Imagine) for the current Create message. Requires library resolution when the prompt names specific people or brands.",
+        "Queue a new image, edit, or variation. Choose the exact ordered set of at most five authorized reference candidates. For a variation, put the generated base image first.",
       schema: z.object({
+        mode: z.enum(["generate", "edit", "variation"]),
         aspectRatio: createAspectRatioSchema
           .optional()
           .describe("Optional ratio such as 16:9"),
@@ -162,15 +147,18 @@ export function createCreateChatTools(handlers: CreateChatToolHandlers) {
           .describe(
             "Detailed generation prompt. Reference linked images as <IMAGE_0>, <IMAGE_1> in order.",
           ),
-        referenceAssetIds: z
-          .array(z.uuid())
-          .max(12)
+        references: z
+          .array(
+            z.object({
+              assetId: z.uuid(),
+              role: z.string().trim().min(1).max(200),
+            }),
+          )
+          .max(5)
           .optional()
-          .describe("Library asset IDs to use as Grok reference images"),
-        referenceRoles: z
-          .record(z.string().uuid(), z.string().trim().min(1).max(200))
-          .optional()
-          .describe("Role for each referenced asset ID, such as primary subject or logo"),
+          .describe(
+            "Exact ordered references. Image order is significant. Include each asset once with its role.",
+          ),
       }),
     },
   );
@@ -193,7 +181,6 @@ export function createCreateChatTools(handlers: CreateChatToolHandlers) {
   return [
     searchAssets,
     inspectAssets,
-    linkReferenceAssets,
     webSearch,
     startGeneration,
     getGenerationStatus,

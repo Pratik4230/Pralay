@@ -12,11 +12,9 @@ type CreateProjectThreadComposerProps = {
   workspaceId: string;
 };
 
-export const CreateProjectThreadComposer: FC<CreateProjectThreadComposerProps> = ({
-  autoFocus,
-  projectId,
-  workspaceId,
-}) => {
+export const CreateProjectThreadComposer: FC<
+  CreateProjectThreadComposerProps
+> = ({ autoFocus, projectId, workspaceId }) => {
   return (
     <ComposerPrimitive.Root className="aui-composer-root relative flex w-full flex-col">
       <div
@@ -25,14 +23,10 @@ export const CreateProjectThreadComposer: FC<CreateProjectThreadComposerProps> =
       >
         <CreateComposerHighlightedInput autoFocus={autoFocus} />
         <p className="px-1 text-xs text-muted-foreground">
-          Tip: use up to 5 @ references per image. Pick the assets that should
-          match most closely, then describe any additional people or details in
-          your prompt.
+          Tip: mention the assets that may help. The assistant will choose up to
+          5 references for the image.
         </p>
-        <CreateComposerAction
-          workspaceId={workspaceId}
-          projectId={projectId}
-        />
+        <CreateComposerAction workspaceId={workspaceId} projectId={projectId} />
       </div>
     </ComposerPrimitive.Root>
   );

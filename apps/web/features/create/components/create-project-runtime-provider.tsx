@@ -24,7 +24,7 @@ import type { CreateThreadMessage } from "@/features/create/types/create-ui";
 import { mapAssistantMessagesToCreateMessages } from "@/features/create/utils/map-assistant-messages";
 import { resolveCreateSendReferenceAssets } from "@/features/create/utils/resolve-create-send-references";
 import { createKeys } from "@/features/create/utils/query-keys";
-import { submitProjectAssistantMessage } from "@/features/create/utils/fetch-project-assistant";
+import { streamProjectAssistantMessage } from "@/features/create/utils/stream-project-assistant";
 
 type CreateProjectRuntimeProviderProps = {
   workspaceId: string;
@@ -32,11 +32,12 @@ type CreateProjectRuntimeProviderProps = {
   children: ReactNode;
 };
 
-/** How often to poll for the assistant reply (ms). */
-const REPLY_POLL_INTERVAL_MS = 2_000;
-
-/** Max time to wait for an assistant reply before giving up (ms). */
-const REPLY_TIMEOUT_MS = 90_000;
+type StreamedAssistantOverlay = {
+  id: string;
+  threadId: string;
+  content: string;
+  createdAt: string;
+};
 
 function extractUserText(message: AppendMessage): string {
   return message.content
@@ -53,17 +54,9 @@ export function CreateProjectRuntimeProvider({
 }: CreateProjectRuntimeProviderProps) {
   const queryClient = useQueryClient();
   const [isRunning, setIsRunning] = useState(false);
-
-  /**
-   * When set, the client polls GET /messages at REPLY_POLL_INTERVAL_MS until
-   * an assistant message appears after this user message (or timeout fires).
-   */
-  const [pendingReplyForMessageId, setPendingReplyForMessageId] = useState<
-    string | null
-  >(null);
-
-  // Track the submit timestamp for timeout
-  const submitTimestampRef = useRef<number>(0);
+  const [streamedAssistant, setStreamedAssistant] =
+    useState<StreamedAssistantOverlay | null>(null);
+  const streamAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     useCreateProjectStore.getState().ensureProject(projectId);
@@ -73,90 +66,60 @@ export function CreateProjectRuntimeProvider({
     (state) => state.byProject[projectId]?.activeThreadId ?? null,
   );
 
-  // Poll while waiting for assistant reply; otherwise no auto-refetch.
   const messagesQuery = useProjectAssistantMessages(
     workspaceId,
     projectId,
     activeThreadId,
-    {
-      refetchInterval: pendingReplyForMessageId
-        ? REPLY_POLL_INTERVAL_MS
-        : false,
-    },
   );
-
-  // ---------------------------------------------------------------------------
-  // Detect when the assistant reply arrives
-  // ---------------------------------------------------------------------------
-  useEffect(() => {
-    if (!pendingReplyForMessageId || !messagesQuery.data) return;
-
-    const msgs = messagesQuery.data.messages;
-    const pendingIdx = msgs.findIndex(
-      (m) => m.id === pendingReplyForMessageId,
-    );
-    if (pendingIdx < 0) return; // user message not yet in page
-
-    // Check if there is an assistant message after our user message
-    const hasReply = msgs
-      .slice(pendingIdx + 1)
-      .some((m) => m.role === "assistant");
-
-    if (hasReply) {
-      setPendingReplyForMessageId(null);
-      setIsRunning(false);
-    }
-  }, [messagesQuery.data, pendingReplyForMessageId]);
-
-  // ---------------------------------------------------------------------------
-  // Timeout: stop polling after REPLY_TIMEOUT_MS
-  // ---------------------------------------------------------------------------
-  useEffect(() => {
-    if (!pendingReplyForMessageId) return;
-
-    const elapsed = Date.now() - submitTimestampRef.current;
-    const remaining = Math.max(0, REPLY_TIMEOUT_MS - elapsed);
-
-    const timer = setTimeout(() => {
-      console.warn(
-        "[create] assistant reply timeout — stopping poll for message",
-        pendingReplyForMessageId,
-      );
-      setPendingReplyForMessageId(null);
-      setIsRunning(false);
-
-      // Final invalidation to pick up whatever state the server has.
-      if (activeThreadId) {
-        void queryClient.invalidateQueries({
-          queryKey: createKeys.assistantMessages(
-            workspaceId,
-            projectId,
-            activeThreadId,
-          ),
-        });
-      }
-    }, remaining);
-
-    return () => clearTimeout(timer);
-  }, [
-    pendingReplyForMessageId,
-    activeThreadId,
-    queryClient,
-    workspaceId,
-    projectId,
-  ]);
 
   // ---------------------------------------------------------------------------
   // Map DB messages to assistant-ui format
   // ---------------------------------------------------------------------------
   const messages = useMemo((): CreateThreadMessage[] => {
-    if (!activeThreadId || !messagesQuery.data) return [];
-    return mapAssistantMessagesToCreateMessages(
-      queryClient,
-      workspaceId,
-      messagesQuery.data.messages,
-    );
-  }, [activeThreadId, messagesQuery.data, queryClient, workspaceId]);
+    const persisted =
+      activeThreadId && messagesQuery.data
+        ? mapAssistantMessagesToCreateMessages(
+            queryClient,
+            workspaceId,
+            messagesQuery.data.messages,
+          )
+        : [];
+
+    if (
+      streamedAssistant &&
+      streamedAssistant.threadId === activeThreadId &&
+      !persisted.some((message) => message.id === streamedAssistant.id)
+    ) {
+      return [
+        ...persisted,
+        {
+          id: streamedAssistant.id,
+          role: "assistant",
+          content: streamedAssistant.content,
+          createdAt: streamedAssistant.createdAt,
+        },
+      ];
+    }
+
+    return persisted;
+  }, [
+    activeThreadId,
+    messagesQuery.data,
+    queryClient,
+    streamedAssistant,
+    workspaceId,
+  ]);
+
+  useEffect(() => {
+    if (!streamedAssistant || !messagesQuery.data) return;
+    if (
+      messagesQuery.data.messages.some(
+        (message) => message.id === streamedAssistant.id,
+      )
+    ) {
+      setStreamedAssistant(null);
+    }
+  }, [messagesQuery.data, streamedAssistant]);
 
   const generationsByMessageId = useMemo(() => {
     const map = new Map<
@@ -172,7 +135,7 @@ export function CreateProjectRuntimeProvider({
   }, [messages]);
 
   // ---------------------------------------------------------------------------
-  // Send handler: submit + poll
+  // Send handler: stream NDJSON events, then reconcile with persisted messages.
   // ---------------------------------------------------------------------------
   const onNew = useCallback(
     async (message: AppendMessage) => {
@@ -192,10 +155,27 @@ export function CreateProjectRuntimeProvider({
       useCreateProjectStore.getState().clearStagedAssets(projectId);
 
       setIsRunning(true);
-      submitTimestampRef.current = Date.now();
+      setStreamedAssistant(null);
+      const abortController = new AbortController();
+      streamAbortRef.current = abortController;
+      let streamError: string | null = null;
+      let streamedThreadId: string | undefined;
+
+      const reconcileStreamedThread = (threadId: string) => {
+        void queryClient.invalidateQueries({
+          queryKey: createKeys.assistantThreads(workspaceId, projectId),
+        });
+        void queryClient.invalidateQueries({
+          queryKey: createKeys.assistantMessages(
+            workspaceId,
+            projectId,
+            threadId,
+          ),
+        });
+      };
 
       try {
-        const result = await submitProjectAssistantMessage(
+        const result = await streamProjectAssistantMessage(
           workspaceId,
           projectId,
           {
@@ -204,36 +184,106 @@ export function CreateProjectRuntimeProvider({
             referenceAssetIds: libraryAssets.map((a) => a.id),
             chatModelId: slice?.session.chatModelId ?? "gpt-5.4-mini",
           },
+          {
+            signal: abortController.signal,
+            onMeta: ({ thread }) => {
+              streamedThreadId = thread.id;
+              useCreateProjectStore
+                .getState()
+                .setActiveThreadId(projectId, thread.id);
+              void queryClient.invalidateQueries({
+                queryKey: createKeys.assistantThreads(workspaceId, projectId),
+              });
+              void queryClient.invalidateQueries({
+                queryKey: createKeys.assistantMessages(
+                  workspaceId,
+                  projectId,
+                  thread.id,
+                ),
+              });
+            },
+            onGeneration: ({ userMessage }) => {
+              void queryClient.invalidateQueries({
+                queryKey: createKeys.assistantMessages(
+                  workspaceId,
+                  projectId,
+                  userMessage.threadId,
+                ),
+              });
+            },
+            onTextDelta: (_delta, fullText) => {
+              if (!streamedThreadId) return;
+              setStreamedAssistant({
+                id: `streaming-${streamedThreadId}`,
+                threadId: streamedThreadId,
+                content: fullText,
+                createdAt: new Date().toISOString(),
+              });
+            },
+            onDone: ({ thread, assistantMessage }) => {
+              streamedThreadId = thread.id;
+              if (assistantMessage) {
+                setStreamedAssistant({
+                  id: assistantMessage.id,
+                  threadId: thread.id,
+                  content: assistantMessage.content,
+                  createdAt: assistantMessage.createdAt,
+                });
+              } else {
+                setStreamedAssistant(null);
+              }
+              void queryClient.invalidateQueries({
+                queryKey: createKeys.assistantThreads(workspaceId, projectId),
+              });
+              void queryClient.invalidateQueries({
+                queryKey: createKeys.assistantMessages(
+                  workspaceId,
+                  projectId,
+                  thread.id,
+                ),
+              });
+            },
+            onError: (message) => {
+              streamError = message;
+            },
+          },
         );
 
-        // Show user message immediately via query invalidation.
-        useCreateProjectStore
-          .getState()
-          .setActiveThreadId(projectId, result.thread.id);
+        if (!result.completed && !abortController.signal.aborted) {
+          if (streamError) {
+            throw new Error(streamError);
+          }
+          if (!result.threadId) {
+            throw new Error("Assistant stream ended before metadata");
+          }
 
-        void queryClient.invalidateQueries({
-          queryKey: createKeys.assistantThreads(workspaceId, projectId),
-        });
-        void queryClient.invalidateQueries({
-          queryKey: createKeys.assistantMessages(
-            workspaceId,
-            projectId,
-            result.thread.id,
-          ),
-        });
-
-        // Start polling for the assistant reply.
-        setPendingReplyForMessageId(result.userMessage.id);
+          // The user message is already persisted. If a proxy closes after the
+          // meta event, reconcile now and again while the server drains the turn.
+          reconcileStreamedThread(result.threadId);
+          for (const delay of [2_000, 5_000, 15_000]) {
+            window.setTimeout(
+              () => reconcileStreamedThread(result.threadId!),
+              delay,
+            );
+          }
+        }
       } catch (error) {
+        if (!abortController.signal.aborted) {
+          console.error("[create] stream failed", error);
+        }
+      } finally {
+        if (streamAbortRef.current === abortController) {
+          streamAbortRef.current = null;
+        }
         setIsRunning(false);
-        console.error("[create] submit failed", error);
       }
     },
     [projectId, queryClient, workspaceId],
   );
 
   const onCancel = useCallback(async () => {
-    setPendingReplyForMessageId(null);
+    streamAbortRef.current?.abort();
+    streamAbortRef.current = null;
     setIsRunning(false);
   }, []);
 

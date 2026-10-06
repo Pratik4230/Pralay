@@ -35,7 +35,10 @@ export async function generateProjectImage(
   }
 
   const apiKey = getXaiApiKey();
-  const refs = (input.referenceImageUrls ?? []).filter(Boolean).slice(0, 5);
+  const refs = (input.referenceImageUrls ?? []).filter(Boolean);
+  if (refs.length > 5) {
+    throw new Error("Image generation supports at most five reference images");
+  }
 
   if (refs.length > 0) {
     const edit = await editImagineWithReferences({
