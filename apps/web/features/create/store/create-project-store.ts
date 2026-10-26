@@ -10,7 +10,7 @@ import type {
 
 export const DEFAULT_SESSION: CreateSessionState = {
   draft: "",
-  chatModelId: "gpt-5.4-mini",
+  chatModelId: "gpt-5.6-luna",
 };
 
 type ProjectCreateSlice = {

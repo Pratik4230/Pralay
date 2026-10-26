@@ -182,7 +182,7 @@ export function CreateProjectRuntimeProvider({
             threadId: slice?.activeThreadId ?? undefined,
             prompt,
             referenceAssetIds: libraryAssets.map((a) => a.id),
-            chatModelId: slice?.session.chatModelId ?? "gpt-5.4-mini",
+            chatModelId: slice?.session.chatModelId ?? "gpt-5.6-luna",
           },
           {
             signal: abortController.signal,

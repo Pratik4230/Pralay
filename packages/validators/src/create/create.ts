@@ -3,10 +3,10 @@ import { z } from "zod";
 import { workspaceAssetDisplayNameSchema } from "../asset/asset.js";
 
 /** Default Create chat model (OpenAI). */
-export const CREATE_CHAT_MODEL_IDS = ["gpt-5.4-mini"] as const;
+export const CREATE_CHAT_MODEL_IDS = ["gpt-5.6-luna"] as const;
 
 /** One-shot thread title generation. */
-export const CREATE_THREAD_TITLE_MODEL_ID = "gpt-5-nano" as const;
+export const CREATE_THREAD_TITLE_MODEL_ID = "gpt-5.6-luna" as const;
 
 export const createChatModelIdSchema = z.enum(CREATE_CHAT_MODEL_IDS);
 
@@ -58,7 +58,7 @@ export const createProjectMessageBodySchema = z.object({
   threadId: z.uuid().optional(),
   prompt: createPromptTextSchema,
   referenceAssetIds: createReferenceCandidateAssetIdsSchema.default([]),
-  chatModelId: createChatModelIdSchema.default("gpt-5.4-mini"),
+  chatModelId: createChatModelIdSchema.default("gpt-5.6-luna"),
   presetKey: createPresetKeySchema.optional(),
   aspectRatio: createAspectRatioSchema.optional(),
   /** When true, enqueue Grok Imagine on send without waiting for the agent tool. Default false: use start_generation. */

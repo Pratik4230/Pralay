@@ -40,13 +40,13 @@ Create youtube thumbnail where Jonathan lifting trophy with his team and jelly i
 | Role                      | Provider                                                    | Notes                                                                                                                                                                            |
 | ------------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Orchestration**         | [LangGraph.js](https://langchain-ai.github.io/langgraphjs/) | Default for chat + tools + future multi-step flows; Postgres checkpointer in prod                                                                                                |
-| **Chat / tools (Create)** | OpenAI **`gpt-5.4-mini`**                                   | Default Create chat + LangGraph tool loops ([OpenAI models](https://developers.openai.com/api/docs/models))                                                                      |
-| **Thread titles only**    | OpenAI **`gpt-5-nano`**                                     | One short call per new thread; cheapest ([gpt-5-nano](https://developers.openai.com/api/docs/models/gpt-5-nano))                                                                 |
+| **Chat / tools (Create)** | OpenAI **`gpt-5.6-luna`**                                   | Default Create chat + LangGraph tool loops ([GPT-5.6 Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna))                                                          |
+| **Thread titles only**    | OpenAI **`gpt-5.6-luna`**                                   | One short call per new thread ([GPT-5.6 Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna))                                                                       |
 | **Image generation (v1)** | xAI **Grok Imagine**                                        | Cheapest suitable model per [pricing](https://docs.x.ai/developers/pricing.md) + [models](https://docs.x.ai/developers/models.md) at integration time                            |
 | **Create UI**             | [Assistant UI](https://www.assistant-ui.com/)               | Chat thread + custom composer (`@` mentions, no inline upload tiles); `useExternalStoreRuntime` + assistant stream API |
 | **Create client state**   | **Zustand**                                                 | In-memory draft, **`stagedAssets`** (`@` refs), active thread per **`projectId`**; threads/messages from API            |
 
-**Chat model decision (v1):** Use **`gpt-5.4-mini`** for streamed Create replies and LangGraph tool loops. Use **`gpt-5-nano`** only for auto thread titles. Grok stays on **Imagine** for images only.
+**Chat model decision (v1):** Use **`gpt-5.6-luna`** for streamed Create replies, LangGraph tool loops, web search, and auto thread titles. Grok stays on **Imagine** for images only.
 
 **Create UI decision:** Use **Assistant UI** (not AI Elements). Local registry components under `global/components/assistant-ui/`. **Do not** attach files in the Create composer; use **`WorkspaceAssetsUploadDialog`** + **`@`** only. Mention picker is caret-aware (`create-composer-asset-mentions.tsx`).
 
@@ -200,7 +200,7 @@ packages/ai (providers) · packages/agents (LangGraph graphs + tools) — planne
 | `assistant_threads` / `assistant_messages`              | ✅     | Create threads + messages API                                      |
 | Assistant stream (NDJSON)                               | 🟡     | OpenAI tools + keepalive pings; harden Inngest/generations         |
 | `packages/agents` LangGraph + tools                     | 🟡     | Tooling in API via `@repo/agents`; full LangGraph checkpointer TBD |
-| OpenAI `gpt-5.4-mini` chat stream + `gpt-5-nano` titles | ✅     | Stream route + thread titles                                       |
+| OpenAI `gpt-5.6-luna` chat stream + titles              | ✅     | Stream route + thread titles                                       |
 | `packages/ai` Grok Imagine adapter                      | 🟡     | Inngest worker path                                                |
 | Generations API + Inngest                               | 🟡     | Enqueue + status; polish failures/retries                          |
 | `@` asset suggest API                                   | ✅     | `GET .../assets/suggest`                                           |
@@ -294,7 +294,7 @@ See `.env.example`. Required for AI slice: `DATABASE_URL`, S3, `OPENAI_API_KEY`,
 | -------------------------------------------------------- | --------------------------------------------------------------- |
 | `@langchain/langgraph`                                   | Graph orchestration                                             |
 | `@langchain/core`                                        | Messages, tools                                                 |
-| `@langchain/openai`                                      | `gpt-5.4-mini`, `gpt-5-nano`                                    |
+| `@langchain/openai`                                      | `gpt-5.6-luna`                                                   |
 | `@langchain/langgraph-checkpoint-postgres`               | Graph checkpoints                                               |
 | `@langchain/google-genai` or xAI client in `packages/ai` | Grok Imagine (v1 images)                                        |
 | `inngest`                                                | Async generation worker (`apps/inngest` or Hono route)          |
