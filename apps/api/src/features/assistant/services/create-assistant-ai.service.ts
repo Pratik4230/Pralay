@@ -35,6 +35,7 @@ export type CreateAssistantChatContext = {
   setUserMessageRow: (row: MessageRow) => void;
   onGenerationLinked?: (userMessage: ReturnType<typeof mapMessage>) => void;
   referenceCandidates: CreateChatReferenceCandidate[];
+  events?: CreateChatRunContext["events"];
 };
 
 function buildRunContext(
@@ -42,6 +43,7 @@ function buildRunContext(
 ): CreateChatRunContext {
   return {
     toolHandlers: createCreateChatToolHandlers(chatContext),
+    events: chatContext.events,
   };
 }
 
@@ -91,6 +93,21 @@ export async function generateCreateAssistantReply(
     console.error("[create-assistant] chat turn failed", error);
     return MODEL_ERROR_REPLY;
   }
+}
+
+/**
+ * Runs a turn without converting provider failures into assistant text.
+ * Durable workers use this so Inngest can retry transient failures safely.
+ */
+export async function runCreateAssistantReply(
+  input: ChatTurnInput,
+  chatContext: CreateAssistantChatContext,
+): Promise<string> {
+  if (!hasOpenAiApiKey()) return PLACEHOLDER_NO_OPENAI;
+  return runCreateChatTurn(
+    await withResolvedReferenceAssets(input),
+    buildRunContext(chatContext),
+  );
 }
 
 export async function* streamCreateAssistantReply(

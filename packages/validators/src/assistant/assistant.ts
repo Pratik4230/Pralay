@@ -34,7 +34,69 @@ export const assistantMessageSchema = z.object({
   referenceAssetIds: createReferenceCandidateAssetIdsSchema,
   generationId: z.uuid().nullable(),
   generation: assistantMessageGenerationSummarySchema.nullable().optional(),
+  run: z
+    .lazy(() => assistantRunSchema)
+    .nullable()
+    .optional(),
   createdAt: z.string(),
+});
+
+export const assistantRunStatusSchema = z.enum([
+  "queued",
+  "processing",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+
+export const assistantRunOutcomeSchema = z.enum([
+  "assistant_message",
+  "generation_started",
+]);
+
+export const assistantRunSchema = z.object({
+  id: z.uuid(),
+  threadId: z.uuid(),
+  userMessageId: z.uuid(),
+  assistantMessageId: z.uuid().nullable(),
+  status: assistantRunStatusSchema,
+  outcome: assistantRunOutcomeSchema.nullable(),
+  errorMessage: z.string().nullable(),
+  attemptCount: z.number().int().nonnegative(),
+  cancelRequestedAt: z.string().nullable(),
+  startedAt: z.string().nullable(),
+  completedAt: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export const assistantRunEventTypeSchema = z.enum([
+  "reset",
+  "status",
+  "progress",
+  "text_delta",
+  "generation",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+
+export const assistantRunEventSchema = z.object({
+  id: z.uuid(),
+  runId: z.uuid(),
+  sequence: z.number().int().positive(),
+  type: assistantRunEventTypeSchema,
+  payload: z.record(z.string(), z.unknown()),
+  createdAt: z.string(),
+});
+
+export const listAssistantRunEventsQuerySchema = z.object({
+  after: z.coerce.number().int().nonnegative().default(0),
+});
+
+export const listAssistantRunEventsResponseSchema = z.object({
+  run: assistantRunSchema,
+  events: z.array(assistantRunEventSchema),
 });
 
 export const listProjectAssistantThreadsResponseSchema = z.object({
@@ -89,6 +151,11 @@ export const sendProjectAssistantMessageResponseSchema = z.object({
 export const submitProjectAssistantMessageResponseSchema = z.object({
   thread: assistantThreadSchema,
   userMessage: assistantMessageSchema,
+  run: assistantRunSchema,
+});
+
+export const mutateAssistantRunResponseSchema = z.object({
+  run: assistantRunSchema,
 });
 
 export const assistantThreadNotFoundError = createApiError(
@@ -98,6 +165,8 @@ export const assistantThreadNotFoundError = createApiError(
 
 export type AssistantThread = z.infer<typeof assistantThreadSchema>;
 export type AssistantMessage = z.infer<typeof assistantMessageSchema>;
+export type AssistantRun = z.infer<typeof assistantRunSchema>;
+export type AssistantRunEvent = z.infer<typeof assistantRunEventSchema>;
 export type ListProjectAssistantMessagesQuery = z.infer<
   typeof listProjectAssistantMessagesQuerySchema
 >;

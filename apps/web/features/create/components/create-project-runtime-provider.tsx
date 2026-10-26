@@ -24,7 +24,12 @@ import type { CreateThreadMessage } from "@/features/create/types/create-ui";
 import { mapAssistantMessagesToCreateMessages } from "@/features/create/utils/map-assistant-messages";
 import { resolveCreateSendReferenceAssets } from "@/features/create/utils/resolve-create-send-references";
 import { createKeys } from "@/features/create/utils/query-keys";
-import { streamProjectAssistantMessage } from "@/features/create/utils/stream-project-assistant";
+import {
+  cancelProjectAssistantRun,
+  retryProjectAssistantRun,
+  submitProjectAssistantMessage,
+} from "@/features/create/utils/fetch-project-assistant";
+import { followProjectAssistantRun } from "@/features/create/utils/follow-project-assistant-run";
 
 type CreateProjectRuntimeProviderProps = {
   workspaceId: string;
@@ -57,6 +62,7 @@ export function CreateProjectRuntimeProvider({
   const [streamedAssistant, setStreamedAssistant] =
     useState<StreamedAssistantOverlay | null>(null);
   const streamAbortRef = useRef<AbortController | null>(null);
+  const activeRunIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     useCreateProjectStore.getState().ensureProject(projectId);
@@ -101,6 +107,33 @@ export function CreateProjectRuntimeProvider({
       ];
     }
 
+    const latestRun = activeThreadId
+      ? [...(messagesQuery.data?.messages ?? [])]
+          .reverse()
+          .find((message) => message.run)?.run
+      : null;
+    const latestFailedRun =
+      latestRun?.status === "failed" || latestRun?.status === "cancelled"
+        ? latestRun
+        : null;
+    if (
+      latestFailedRun &&
+      !persisted.some((message) => message.id === `run-${latestFailedRun.id}`)
+    ) {
+      return [
+        ...persisted,
+        {
+          id: `run-${latestFailedRun.id}`,
+          role: "assistant",
+          content:
+            latestFailedRun.status === "cancelled"
+              ? "This response was cancelled. You can retry it."
+              : `${latestFailedRun.errorMessage ?? "The assistant run failed."}\n\nYou can retry this response.`,
+          createdAt: latestFailedRun.updatedAt,
+        },
+      ];
+    }
+
     return persisted;
   }, [
     activeThreadId,
@@ -135,7 +168,115 @@ export function CreateProjectRuntimeProvider({
   }, [messages]);
 
   // ---------------------------------------------------------------------------
-  // Send handler: stream NDJSON events, then reconcile with persisted messages.
+  const reconcileThread = useCallback(
+    (threadId: string) => {
+      void queryClient.invalidateQueries({
+        queryKey: createKeys.assistantThreads(workspaceId, projectId),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: createKeys.assistantMessages(
+          workspaceId,
+          projectId,
+          threadId,
+        ),
+      });
+    },
+    [projectId, queryClient, workspaceId],
+  );
+
+  const followRun = useCallback(
+    async (
+      runId: string,
+      threadId: string,
+      abortController: AbortController,
+    ) => {
+      activeRunIdRef.current = runId;
+      setIsRunning(true);
+      try {
+        await followProjectAssistantRun(workspaceId, projectId, runId, {
+          signal: abortController.signal,
+          onReset: () => setStreamedAssistant(null),
+          onProgress: (label) => {
+            setStreamedAssistant((current) =>
+              current?.content
+                ? current
+                : {
+                    id: `run-${runId}`,
+                    threadId,
+                    content: `${label}...`,
+                    createdAt: new Date().toISOString(),
+                  },
+            );
+          },
+          onTextDelta: (_delta, fullText) => {
+            setStreamedAssistant({
+              id: `run-${runId}`,
+              threadId,
+              content: fullText,
+              createdAt: new Date().toISOString(),
+            });
+          },
+          onGeneration: () => reconcileThread(threadId),
+          onCompleted: (run) => {
+            if (!run.assistantMessageId) setStreamedAssistant(null);
+            else {
+              setStreamedAssistant((current) =>
+                current ? { ...current, id: run.assistantMessageId! } : current,
+              );
+            }
+            reconcileThread(threadId);
+          },
+          onFailed: (message) => {
+            setStreamedAssistant({
+              id: `run-${runId}`,
+              threadId,
+              content: `${message}\n\nYou can retry this response.`,
+              createdAt: new Date().toISOString(),
+            });
+            reconcileThread(threadId);
+          },
+          onCancelled: () => {
+            setStreamedAssistant(null);
+            reconcileThread(threadId);
+          },
+        });
+      } finally {
+        if (streamAbortRef.current === abortController) {
+          streamAbortRef.current = null;
+        }
+        if (activeRunIdRef.current === runId) activeRunIdRef.current = null;
+        setIsRunning(false);
+      }
+    },
+    [projectId, reconcileThread, workspaceId],
+  );
+
+  // Resume the newest unfinished run after navigation or a browser refresh.
+  useEffect(() => {
+    if (!activeThreadId || streamAbortRef.current || !messagesQuery.data)
+      return;
+    const resumable = [...messagesQuery.data.messages]
+      .reverse()
+      .find(
+        (message) =>
+          message.run?.status === "queued" ||
+          message.run?.status === "processing",
+      );
+    if (!resumable?.run) return;
+
+    const abortController = new AbortController();
+    streamAbortRef.current = abortController;
+    void followRun(resumable.run.id, activeThreadId, abortController).catch(
+      (error) => {
+        if (!abortController.signal.aborted) {
+          console.error("[create] failed to resume assistant run", error);
+        }
+      },
+    );
+    return () => abortController.abort();
+  }, [activeThreadId, followRun, messagesQuery.data]);
+
+  // Submit once, then follow persisted run events until a terminal state.
   // ---------------------------------------------------------------------------
   const onNew = useCallback(
     async (message: AppendMessage) => {
@@ -158,24 +299,9 @@ export function CreateProjectRuntimeProvider({
       setStreamedAssistant(null);
       const abortController = new AbortController();
       streamAbortRef.current = abortController;
-      let streamError: string | null = null;
-      let streamedThreadId: string | undefined;
-
-      const reconcileStreamedThread = (threadId: string) => {
-        void queryClient.invalidateQueries({
-          queryKey: createKeys.assistantThreads(workspaceId, projectId),
-        });
-        void queryClient.invalidateQueries({
-          queryKey: createKeys.assistantMessages(
-            workspaceId,
-            projectId,
-            threadId,
-          ),
-        });
-      };
 
       try {
-        const result = await streamProjectAssistantMessage(
+        const result = await submitProjectAssistantMessage(
           workspaceId,
           projectId,
           {
@@ -184,89 +310,12 @@ export function CreateProjectRuntimeProvider({
             referenceAssetIds: libraryAssets.map((a) => a.id),
             chatModelId: slice?.session.chatModelId ?? "gpt-5.6-luna",
           },
-          {
-            signal: abortController.signal,
-            onMeta: ({ thread }) => {
-              streamedThreadId = thread.id;
-              useCreateProjectStore
-                .getState()
-                .setActiveThreadId(projectId, thread.id);
-              void queryClient.invalidateQueries({
-                queryKey: createKeys.assistantThreads(workspaceId, projectId),
-              });
-              void queryClient.invalidateQueries({
-                queryKey: createKeys.assistantMessages(
-                  workspaceId,
-                  projectId,
-                  thread.id,
-                ),
-              });
-            },
-            onGeneration: ({ userMessage }) => {
-              void queryClient.invalidateQueries({
-                queryKey: createKeys.assistantMessages(
-                  workspaceId,
-                  projectId,
-                  userMessage.threadId,
-                ),
-              });
-            },
-            onTextDelta: (_delta, fullText) => {
-              if (!streamedThreadId) return;
-              setStreamedAssistant({
-                id: `streaming-${streamedThreadId}`,
-                threadId: streamedThreadId,
-                content: fullText,
-                createdAt: new Date().toISOString(),
-              });
-            },
-            onDone: ({ thread, assistantMessage }) => {
-              streamedThreadId = thread.id;
-              if (assistantMessage) {
-                setStreamedAssistant({
-                  id: assistantMessage.id,
-                  threadId: thread.id,
-                  content: assistantMessage.content,
-                  createdAt: assistantMessage.createdAt,
-                });
-              } else {
-                setStreamedAssistant(null);
-              }
-              void queryClient.invalidateQueries({
-                queryKey: createKeys.assistantThreads(workspaceId, projectId),
-              });
-              void queryClient.invalidateQueries({
-                queryKey: createKeys.assistantMessages(
-                  workspaceId,
-                  projectId,
-                  thread.id,
-                ),
-              });
-            },
-            onError: (message) => {
-              streamError = message;
-            },
-          },
         );
-
-        if (!result.completed && !abortController.signal.aborted) {
-          if (streamError) {
-            throw new Error(streamError);
-          }
-          if (!result.threadId) {
-            throw new Error("Assistant stream ended before metadata");
-          }
-
-          // The user message is already persisted. If a proxy closes after the
-          // meta event, reconcile now and again while the server drains the turn.
-          reconcileStreamedThread(result.threadId);
-          for (const delay of [2_000, 5_000, 15_000]) {
-            window.setTimeout(
-              () => reconcileStreamedThread(result.threadId!),
-              delay,
-            );
-          }
-        }
+        useCreateProjectStore
+          .getState()
+          .setActiveThreadId(projectId, result.thread.id);
+        reconcileThread(result.thread.id);
+        await followRun(result.run.id, result.thread.id, abortController);
       } catch (error) {
         if (!abortController.signal.aborted) {
           console.error("[create] stream failed", error);
@@ -274,18 +323,57 @@ export function CreateProjectRuntimeProvider({
       } finally {
         if (streamAbortRef.current === abortController) {
           streamAbortRef.current = null;
+          setIsRunning(false);
         }
-        setIsRunning(false);
       }
     },
-    [projectId, queryClient, workspaceId],
+    [followRun, projectId, reconcileThread, workspaceId],
   );
 
   const onCancel = useCallback(async () => {
+    const runId = activeRunIdRef.current;
+    if (runId) {
+      try {
+        await cancelProjectAssistantRun(workspaceId, projectId, runId);
+      } catch (error) {
+        console.error("[create] failed to cancel assistant run", error);
+      }
+    }
     streamAbortRef.current?.abort();
     streamAbortRef.current = null;
+    activeRunIdRef.current = null;
     setIsRunning(false);
-  }, []);
+  }, [projectId, workspaceId]);
+
+  const onReload = useCallback(
+    async (parentId: string | null) => {
+      if (!parentId || !activeThreadId) return;
+      const sourceMessage = messagesQuery.data?.messages.find(
+        (message) => message.id === parentId,
+      );
+      const run = sourceMessage?.run;
+      if (!run || (run.status !== "failed" && run.status !== "cancelled")) {
+        return;
+      }
+
+      const retried = await retryProjectAssistantRun(
+        workspaceId,
+        projectId,
+        run.id,
+      );
+      setStreamedAssistant(null);
+      const abortController = new AbortController();
+      streamAbortRef.current = abortController;
+      await followRun(retried.run.id, activeThreadId, abortController);
+    },
+    [
+      activeThreadId,
+      followRun,
+      messagesQuery.data?.messages,
+      projectId,
+      workspaceId,
+    ],
+  );
 
   const runtime = useExternalStoreRuntime({
     isRunning,
@@ -293,6 +381,7 @@ export function CreateProjectRuntimeProvider({
     convertMessage: convertCreateThreadMessage,
     onNew,
     onCancel,
+    onReload,
   });
 
   return (

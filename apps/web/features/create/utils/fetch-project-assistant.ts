@@ -6,6 +6,8 @@ import type {
 import {
   listProjectAssistantMessagesResponseSchema,
   listProjectAssistantThreadsResponseSchema,
+  listAssistantRunEventsResponseSchema,
+  mutateAssistantRunResponseSchema,
   sendProjectAssistantMessageResponseSchema,
   submitProjectAssistantMessageResponseSchema,
 } from "@repo/validators";
@@ -69,6 +71,39 @@ export function submitProjectAssistantMessage(
       body: JSON.stringify(body),
     },
   ).then((data) => submitProjectAssistantMessageResponseSchema.parse(data));
+}
+
+export function fetchProjectAssistantRunEvents(
+  workspaceId: string,
+  projectId: string,
+  runId: string,
+  afterSequence: number,
+) {
+  return fetchApiClient(
+    `/api/v1/workspaces/${workspaceId}/projects/${projectId}/assistant/runs/${runId}/events?after=${afterSequence}`,
+  ).then((data) => listAssistantRunEventsResponseSchema.parse(data));
+}
+
+export function cancelProjectAssistantRun(
+  workspaceId: string,
+  projectId: string,
+  runId: string,
+) {
+  return fetchApiClient(
+    `/api/v1/workspaces/${workspaceId}/projects/${projectId}/assistant/runs/${runId}/cancel`,
+    { method: "POST" },
+  ).then((data) => mutateAssistantRunResponseSchema.parse(data));
+}
+
+export function retryProjectAssistantRun(
+  workspaceId: string,
+  projectId: string,
+  runId: string,
+) {
+  return fetchApiClient(
+    `/api/v1/workspaces/${workspaceId}/projects/${projectId}/assistant/runs/${runId}/retry`,
+    { method: "POST" },
+  ).then((data) => mutateAssistantRunResponseSchema.parse(data));
 }
 
 export function createProjectAssistantThread(

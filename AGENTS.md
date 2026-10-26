@@ -198,7 +198,7 @@ packages/ai (providers) · packages/agents (LangGraph graphs + tools) — planne
 | Item                                            | Status | Notes                                                                       |
 | ----------------------------------------------- | ------ | --------------------------------------------------------------------------- |
 | `assistant_threads` / `assistant_messages`      | ✅     | Create threads + messages API                                               |
-| Assistant stream (NDJSON)                       | 🟡     | OpenAI tools + keepalive pings; harden Inngest/generations                  |
+| Durable assistant runs + streaming              | ✅     | Persisted ordered events, real model deltas, reconnect, cancel, retry       |
 | `packages/agents` LangGraph + tools             | 🟡     | Tooling in API via `@repo/agents`; full LangGraph checkpointer TBD          |
 | OpenAI `gpt-5.6-luna` chat stream + titles      | ✅     | Stream route + thread titles                                                |
 | `packages/ai` Grok Imagine adapter              | 🟡     | Inngest worker path                                                         |
@@ -241,7 +241,7 @@ packages/ai (providers) · packages/agents (LangGraph graphs + tools) — planne
 | ---------------------------------------------------- | ------ |
 | Auth, me, workspaces, projects, assets, media, trash | ✅     |
 | Assistant threads/messages                           | ✅     |
-| Assistant stream                                     | 🟡     |
+| Assistant runs/events                                | ✅     |
 | Generations                                          | 🟡     |
 | Asset search (for `@`)                               | ✅     | `GET .../assets/suggest` |
 
@@ -316,7 +316,7 @@ See `.env.example`. Required for AI slice: `DATABASE_URL`, S3, `OPENAI_API_KEY`,
 2. ~~Asset suggest for `@`.~~ Done.
 3. ~~Assistant UI + Zustand + `@` (no composer uploads).~~ Done.
 4. ~~Shared upload dialog + Assets/Library.~~ Done.
-5. ~~Harden generation retries + Inngest failure handling.~~ Done. Continue stream reliability.
+5. ~~Harden generation retries, Inngest, and assistant stream reliability.~~ Done.
 6. `packages/agents`: LangGraph checkpointer; optional `useLangGraphRuntime`.
 7. Edit/variation flows via new turns/tools (not composer scope creep).
 
@@ -330,4 +330,4 @@ See `.env.example`. Required for AI slice: `DATABASE_URL`, S3, `OPENAI_API_KEY`,
 | Create UX (frontend)   | ~65%     |
 | AI backend (Create)    | ~55%     |
 
-**Current focus:** Assistant stream hardening, then LangGraph checkpointer.
+**Current focus:** LangGraph Postgres checkpointer, then edit/variation turns.

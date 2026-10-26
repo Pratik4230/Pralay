@@ -1,5 +1,6 @@
 import {
   AIMessage,
+  AIMessageChunk,
   HumanMessage,
   SystemMessage,
   ToolMessage,
@@ -66,6 +67,12 @@ export type RunCreateChatTurnInput = {
 
 export type CreateChatRunContext = {
   toolHandlers: CreateChatToolHandlers;
+  events?: {
+    onModelStart?: (iteration: number) => Promise<void> | void;
+    onTextDelta?: (delta: string) => Promise<void> | void;
+    onToolStart?: (name: string) => Promise<void> | void;
+    onToolEnd?: (name: string) => Promise<void> | void;
+  };
 };
 
 const MAX_TOOL_ITERATIONS = 12;
@@ -196,7 +203,24 @@ export async function runCreateChatTurn(
 
   for (let step = 0; step < MAX_TOOL_ITERATIONS; step += 1) {
     const payload = assertSafeCreateChatPayload(messages);
-    const response = await modelWithTools.invoke(messages);
+    await context.events?.onModelStart?.(step);
+
+    let response: AIMessage | AIMessageChunk;
+    if (context.events?.onTextDelta) {
+      let aggregate: AIMessageChunk | undefined;
+      const stream = await modelWithTools.stream(messages);
+      for await (const chunk of stream) {
+        aggregate = aggregate ? aggregate.concat(chunk) : chunk;
+        const delta = extractMessageText(chunk.content);
+        if (delta) await context.events.onTextDelta(delta);
+      }
+      if (!aggregate) {
+        throw new Error("Create chat model returned an empty stream");
+      }
+      response = aggregate;
+    } else {
+      response = await modelWithTools.invoke(messages);
+    }
     const metadata = response.response_metadata as {
       headers?: Record<string, string>;
     };
@@ -236,6 +260,7 @@ export async function runCreateChatTurn(
       let output: string;
 
       try {
+        await context.events?.onToolStart?.(call.name);
         output = await invokeToolHandler(
           call.name,
           (call.args ?? {}) as Record<string, unknown>,
@@ -245,6 +270,8 @@ export async function runCreateChatTurn(
         const message =
           error instanceof Error ? error.message : "Tool execution failed";
         output = JSON.stringify({ error: message });
+      } finally {
+        await context.events?.onToolEnd?.(call.name);
       }
 
       assertSafeCreateToolResult(output);

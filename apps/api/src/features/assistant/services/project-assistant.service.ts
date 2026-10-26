@@ -1,7 +1,12 @@
-import { and, desc, eq, lt, or } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, or } from "drizzle-orm";
 
 import { db } from "@repo/db";
-import { assistantMessages, assistantThreads } from "@repo/db/schema";
+import {
+  assistantMessages,
+  assistantRunEvents,
+  assistantRuns,
+  assistantThreads,
+} from "@repo/db/schema";
 import type {
   AssistantMessageGenerationSummary,
   CreateProjectAssistantThreadBody,
@@ -29,7 +34,17 @@ import {
 } from "./create-chat-context.js";
 import { completeAssistantTurn } from "./create-assistant-stream.service.js";
 import { inngest } from "../../../inngest/client.js";
-import { generateCreateAssistantReply } from "./create-assistant-ai.service.js";
+import {
+  generateCreateAssistantReply,
+  runCreateAssistantReply,
+} from "./create-assistant-ai.service.js";
+import {
+  appendAssistantRunEvent,
+  completeAssistantRun,
+  failAssistantRun,
+  getAssistantRunById,
+  mapAssistantRun,
+} from "./assistant-runs.service.js";
 import {
   attachGenerationToAssistantUserMessage,
   loadAssistantMessageGenerationSummaries,
@@ -66,6 +81,7 @@ export function mapThread(row: ThreadRow) {
 export function mapMessage(
   row: MessageRow,
   generation?: AssistantMessageGenerationSummary | null,
+  run?: ReturnType<typeof mapAssistantRun> | null,
 ) {
   return {
     id: row.id,
@@ -75,6 +91,7 @@ export function mapMessage(
     referenceAssetIds: row.referenceAssetIds,
     generationId: row.generationId,
     ...(generation !== undefined ? { generation } : {}),
+    ...(run !== undefined ? { run } : {}),
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -241,6 +258,19 @@ export async function listProjectAssistantMessages(
 
   const generationById =
     await loadAssistantMessageGenerationSummaries(generationIds);
+  const userMessageIds = chronological
+    .filter((row) => row.role === "user")
+    .map((row) => row.id);
+  const runRows =
+    userMessageIds.length > 0
+      ? await db
+          .select()
+          .from(assistantRuns)
+          .where(inArray(assistantRuns.userMessageId, userMessageIds))
+      : [];
+  const runByUserMessageId = new Map(
+    runRows.map((row) => [row.userMessageId, mapAssistantRun(row)]),
+  );
 
   let nextCursor: string | null = null;
   if (hasMore) {
@@ -258,6 +288,7 @@ export async function listProjectAssistantMessages(
         row.generationId
           ? (generationById.get(row.generationId) ?? null)
           : null,
+        row.role === "user" ? (runByUserMessageId.get(row.id) ?? null) : null,
       ),
     ),
     nextCursor,
@@ -269,6 +300,7 @@ export async function persistProjectAssistantUserMessage(
   workspaceId: string,
   projectId: string,
   input: SendProjectAssistantMessageBody,
+  options?: { createRun?: boolean },
 ) {
   await assertProjectInWorkspace(actorUserId, workspaceId, projectId);
 
@@ -326,7 +358,32 @@ export async function persistProjectAssistantUserMessage(
       throw new Error("Failed to save user message");
     }
 
-    return { threadRow, userMessageRow };
+    const runRow = options?.createRun
+      ? (
+          await tx
+            .insert(assistantRuns)
+            .values({
+              threadId: threadRow.id,
+              userMessageId: userMessageRow.id,
+              input,
+              nextEventSequence: 2,
+            })
+            .returning()
+        )[0]
+      : null;
+    if (options?.createRun && !runRow) {
+      throw new Error("Failed to create assistant run");
+    }
+    if (runRow) {
+      await tx.insert(assistantRunEvents).values({
+        runId: runRow.id,
+        sequence: 1,
+        type: "status",
+        payload: { status: "queued" },
+      });
+    }
+
+    return { threadRow, userMessageRow, runRow };
   });
 }
 
@@ -426,8 +483,13 @@ export async function sendProjectAssistantMessage(
 // Submit + Poll pattern (production)
 // ---------------------------------------------------------------------------
 
-const AGENT_ERROR_REPLY =
-  "I could not generate a reply right now. Please try again in a moment.";
+const TOOL_PROGRESS: Record<string, string> = {
+  search_assets: "Searching your assets",
+  inspect_assets: "Inspecting reference assets",
+  web_search: "Searching the web",
+  start_generation: "Preparing image generation",
+  get_generation_status: "Checking generation status",
+};
 
 /**
  * Runs the full agent turn in the background after the user message has been
@@ -435,7 +497,7 @@ const AGENT_ERROR_REPLY =
  * On failure: persists an error assistant message so the client always gets
  * a response via polling.
  *
- * This function never throws — all errors are caught and handled.
+ * Provider failures are allowed to throw so Inngest can retry the turn.
  */
 export async function processProjectAssistantTurn(params: {
   actorUserId: string;
@@ -444,82 +506,115 @@ export async function processProjectAssistantTurn(params: {
   threadRow: ThreadRow;
   userMessageRow: MessageRow;
   body: SendProjectAssistantMessageBody;
+  runId: string;
 }): Promise<void> {
-  const { actorUserId, workspaceId, projectId, threadRow, body } = params;
+  const { actorUserId, workspaceId, projectId, threadRow, body, runId } =
+    params;
   const userMessageRef = { row: params.userMessageRow };
 
-  try {
-    const history = await loadCreateChatHistory(threadRow.id, {
+  const history = await loadCreateChatHistory(threadRow.id, {
+    id: userMessageRef.row.id,
+    createdAt: userMessageRef.row.createdAt,
+  });
+  const referenceCandidates = await loadCreateReferenceCandidates({
+    workspaceId,
+    projectId,
+    threadId: threadRow.id,
+    currentReferenceAssetIds: body.referenceAssetIds,
+    beforeMessage: {
       id: userMessageRef.row.id,
       createdAt: userMessageRef.row.createdAt,
-    });
-    const referenceCandidates = await loadCreateReferenceCandidates({
+    },
+  });
+
+  let pendingText = "";
+  const flushText = async () => {
+    if (!pendingText) return;
+    const delta = pendingText;
+    pendingText = "";
+    await appendAssistantRunEvent(runId, "text_delta", { delta });
+  };
+  const assertRunActive = async () => {
+    const run = await getAssistantRunById(runId);
+    if (!run || run.status === "cancelled") {
+      throw new Error("Assistant run was cancelled");
+    }
+  };
+
+  const assistantContent = await runCreateAssistantReply(
+    {
+      chatModelId: body.chatModelId,
       workspaceId,
       projectId,
       threadId: threadRow.id,
-      currentReferenceAssetIds: body.referenceAssetIds,
-      beforeMessage: {
-        id: userMessageRef.row.id,
-        createdAt: userMessageRef.row.createdAt,
+      userMessageId: userMessageRef.row.id,
+      threadSummary: threadRow.summary,
+      history,
+      userPrompt: body.prompt,
+      referenceAssetIds: body.referenceAssetIds,
+      referenceCandidates,
+    },
+    {
+      actorUserId,
+      workspaceId,
+      projectId,
+      body,
+      getUserMessageRow: () => userMessageRef.row,
+      setUserMessageRow: (row) => {
+        userMessageRef.row = row;
       },
-    });
-
-    const assistantContent = await generateCreateAssistantReply(
-      {
-        chatModelId: body.chatModelId,
-        workspaceId,
-        projectId,
-        threadId: threadRow.id,
-        userMessageId: userMessageRef.row.id,
-        threadSummary: threadRow.summary,
-        history,
-        userPrompt: body.prompt,
-        referenceAssetIds: body.referenceAssetIds,
-        referenceCandidates,
-      },
-      {
-        actorUserId,
-        workspaceId,
-        projectId,
-        body,
-        getUserMessageRow: () => userMessageRef.row,
-        setUserMessageRow: (row) => {
-          userMessageRef.row = row;
+      referenceCandidates,
+      events: {
+        onModelStart: async (iteration) => {
+          await assertRunActive();
+          await flushText();
+          if (iteration > 0) {
+            await appendAssistantRunEvent(runId, "reset", { iteration });
+          }
+          await appendAssistantRunEvent(runId, "progress", {
+            label: iteration === 0 ? "Thinking" : "Preparing the response",
+          });
         },
-        referenceCandidates,
+        onTextDelta: async (delta) => {
+          pendingText += delta;
+          if (pendingText.length >= 48 || pendingText.includes("\n")) {
+            await flushText();
+          }
+        },
+        onToolStart: async (name) => {
+          await assertRunActive();
+          await flushText();
+          await appendAssistantRunEvent(runId, "progress", {
+            label: TOOL_PROGRESS[name] ?? "Using a tool",
+            tool: name,
+          });
+        },
       },
-    );
+    },
+  );
+  await flushText();
+  await assertRunActive();
 
-    await completeAssistantTurn({
-      threadRow,
-      userMessageRow: userMessageRef.row,
-      prompt: body.prompt,
-      assistantContent: userMessageRef.row.generationId
-        ? null
-        : assistantContent,
+  if (userMessageRef.row.generationId) {
+    await appendAssistantRunEvent(runId, "generation", {
+      generationId: userMessageRef.row.generationId,
+      userMessage: mapMessage(userMessageRef.row),
     });
-  } catch (error) {
-    console.error("[create-assistant] background agent turn failed", error);
-
-    // Persist a visible error message so the client sees something via polling.
-    try {
-      await db.insert(assistantMessages).values({
-        threadId: threadRow.id,
-        role: "assistant",
-        content: AGENT_ERROR_REPLY,
-        referenceAssetIds: [],
-      });
-      await db
-        .update(assistantThreads)
-        .set({ updatedAt: new Date() })
-        .where(eq(assistantThreads.id, threadRow.id));
-    } catch (dbError) {
-      console.error(
-        "[create-assistant] failed to persist error reply",
-        dbError,
-      );
-    }
   }
+
+  const completed = await completeAssistantTurn({
+    threadRow,
+    userMessageRow: userMessageRef.row,
+    prompt: body.prompt,
+    assistantContent: userMessageRef.row.generationId ? null : assistantContent,
+  });
+  await completeAssistantRun({
+    runId,
+    assistantMessageId: completed.assistantMessage?.id ?? null,
+    outcome: userMessageRef.row.generationId
+      ? "generation_started"
+      : "assistant_message",
+  });
 }
 
 /**
@@ -533,13 +628,17 @@ export async function submitProjectAssistantMessage(
   projectId: string,
   input: SendProjectAssistantMessageBody,
 ) {
-  const { threadRow, userMessageRow: persistedUserMessage } =
-    await persistProjectAssistantUserMessage(
-      actorUserId,
-      workspaceId,
-      projectId,
-      input,
-    );
+  const {
+    threadRow,
+    userMessageRow: persistedUserMessage,
+    runRow,
+  } = await persistProjectAssistantUserMessage(
+    actorUserId,
+    workspaceId,
+    projectId,
+    input,
+    { createRun: true },
+  );
 
   let userMessageRow = persistedUserMessage;
 
@@ -562,21 +661,34 @@ export async function submitProjectAssistantMessage(
     }
   }
 
-  await inngest.send({
-    name: "pralay/assistant-turn.requested",
-    data: {
-      actorUserId,
-      workspaceId,
-      projectId,
-      threadId: threadRow.id,
-      userMessageId: userMessageRow.id,
-      body: input,
-    },
-  });
+  if (!runRow) throw new Error("Failed to create assistant run");
+
+  try {
+    await inngest.send({
+      name: "pralay/assistant-turn.requested",
+      data: {
+        actorUserId,
+        workspaceId,
+        projectId,
+        threadId: threadRow.id,
+        userMessageId: userMessageRow.id,
+        runId: runRow.id,
+        body: input,
+      },
+    });
+  } catch (error) {
+    console.error("[create-assistant] failed to enqueue assistant run", error);
+    const failed = await failAssistantRun(
+      runRow.id,
+      "The assistant could not start this request. You can retry it.",
+    );
+    if (failed) Object.assign(runRow, failed);
+  }
 
   return {
     thread: mapThread(threadRow),
     userMessage: mapMessage(userMessageRow),
+    run: mapAssistantRun(runRow),
   };
 }
 
