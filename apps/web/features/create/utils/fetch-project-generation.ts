@@ -1,5 +1,6 @@
 import {
   getProjectGenerationResponseSchema,
+  retryProjectGenerationResponseSchema,
   type Generation,
 } from "@repo/validators";
 
@@ -13,4 +14,15 @@ export function fetchProjectGeneration(
   return fetchApiClient(
     `/api/v1/workspaces/${workspaceId}/projects/${projectId}/generations/${generationId}`,
   ).then((data) => getProjectGenerationResponseSchema.parse(data));
+}
+
+export function retryProjectGeneration(
+  workspaceId: string,
+  projectId: string,
+  generationId: string,
+): Promise<{ generation: Generation }> {
+  return fetchApiClient(
+    `/api/v1/workspaces/${workspaceId}/projects/${projectId}/generations/${generationId}/retry`,
+    { method: "POST" },
+  ).then((data) => retryProjectGenerationResponseSchema.parse(data));
 }

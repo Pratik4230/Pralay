@@ -59,6 +59,7 @@ export const generationSchema = z.object({
   model: z.string().nullable(),
   errorCode: z.string().nullable(),
   errorMessage: z.string().nullable(),
+  retryCount: z.number().int().nonnegative(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
   startedAt: z.iso.datetime().nullable(),
@@ -80,6 +81,10 @@ export const getProjectGenerationResponseSchema = z.object({
   generation: generationSchema,
 });
 
+export const retryProjectGenerationResponseSchema = z.object({
+  generation: generationSchema,
+});
+
 export const generationNotFoundError = createApiError(
   "NOT_FOUND",
   "Generation not found",
@@ -88,6 +93,11 @@ export const generationNotFoundError = createApiError(
 export const invalidGenerationInputAssetsError = createApiError(
   "VALIDATION_ERROR",
   "One or more reference assets are invalid for this project",
+);
+
+export const generationNotRetryableError = createApiError(
+  "CONFLICT",
+  "Only failed generations can be retried",
 );
 
 export type Generation = z.infer<typeof generationSchema>;

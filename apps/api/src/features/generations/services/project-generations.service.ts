@@ -1,4 +1,5 @@
-import { and, eq, isNull, or, inArray } from "drizzle-orm";
+import { and, eq, isNull, or, inArray, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 
 import { generateProjectImage, resolveImageGenerationDefaults } from "@repo/ai";
 import { db } from "@repo/db";
@@ -26,6 +27,10 @@ import {
   ProjectNotFoundError,
 } from "../../projects/services/workspace-projects.service.js";
 import { requireWorkspaceMembership } from "../../workspace/services/workspace-access.service.js";
+import {
+  classifyGenerationJobError,
+  GenerationJobError,
+} from "./generation-job-errors.js";
 
 export class GenerationNotFoundError extends Error {
   constructor() {
@@ -52,6 +57,13 @@ export class StorageNotConfiguredError extends Error {
   constructor() {
     super("File storage is not configured");
     this.name = "StorageNotConfiguredError";
+  }
+}
+
+export class GenerationNotRetryableError extends Error {
+  constructor() {
+    super("Only failed generations can be retried");
+    this.name = "GenerationNotRetryableError";
   }
 }
 
@@ -103,6 +115,7 @@ export function mapGeneration(
     model: row.model,
     errorCode: row.errorCode,
     errorMessage: row.errorMessage,
+    retryCount: row.retryCount,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     startedAt: row.startedAt?.toISOString() ?? null,
@@ -312,12 +325,32 @@ export async function insertQueuedProjectGeneration(
     return created;
   });
 
-  await inngest.send({
-    name: "pralay/generation.requested",
-    data: { generationId: generation.id },
-  });
-
-  return generation;
+  try {
+    await inngest.send({
+      id: `generation:${generation.id}:initial`,
+      name: "pralay/generation.requested",
+      data: { generationId: generation.id },
+    });
+    return generation;
+  } catch (error) {
+    const [failed] = await db
+      .update(generations)
+      .set({
+        status: "failed",
+        errorCode: "generation_enqueue_failed",
+        errorMessage: "The generation could not be queued. Please try again.",
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(generations.id, generation.id))
+      .returning();
+    await recordGenerationEvent(
+      generation.id,
+      "failed",
+      error instanceof Error ? error.message : "Failed to enqueue generation",
+    );
+    return failed ?? generation;
+  }
 }
 
 /** Enqueue image generation and link it to a Create user message. */
@@ -424,7 +457,145 @@ export async function getProjectGeneration(
   return mapGenerationWithOutputs(row);
 }
 
-export async function runGenerationJob(generationId: string) {
+export async function retryProjectGeneration(
+  actorUserId: string,
+  workspaceId: string,
+  projectId: string,
+  generationId: string,
+) {
+  await getWorkspaceProject(actorUserId, workspaceId, projectId);
+
+  const now = new Date();
+  const [queued] = await db
+    .update(generations)
+    .set({
+      status: "queued",
+      errorCode: null,
+      errorMessage: null,
+      retryCount: 0,
+      startedAt: null,
+      completedAt: null,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(generations.id, generationId),
+        eq(generations.workspaceId, workspaceId),
+        eq(generations.projectId, projectId),
+        eq(generations.status, "failed"),
+        isNull(generations.deletedAt),
+      ),
+    )
+    .returning();
+
+  if (!queued) {
+    const [existing] = await db
+      .select({ id: generations.id })
+      .from(generations)
+      .where(
+        and(
+          eq(generations.id, generationId),
+          eq(generations.workspaceId, workspaceId),
+          eq(generations.projectId, projectId),
+          isNull(generations.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!existing) throw new GenerationNotFoundError();
+    throw new GenerationNotRetryableError();
+  }
+
+  await recordGenerationEvent(
+    generationId,
+    "queued",
+    "Generation queued for retry",
+  );
+
+  try {
+    await inngest.send({
+      id: `generation:${generationId}:manual:${randomUUID()}`,
+      name: "pralay/generation.requested",
+      data: { generationId },
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to enqueue generation";
+    await markGenerationFailed(generationId, {
+      code: "generation_failed",
+      message: "The generation could not be queued. Please try again.",
+      eventMessage: message,
+    });
+    throw error;
+  }
+
+  return mapGenerationWithOutputs(queued);
+}
+
+async function recordGenerationAttemptFailure(
+  generationId: string,
+  attemptNumber: number,
+  error: GenerationJobError,
+) {
+  await db
+    .update(generations)
+    .set({
+      errorCode: error.code,
+      errorMessage: error.userMessage,
+      updatedAt: new Date(),
+    })
+    .where(eq(generations.id, generationId));
+
+  const suffix = error.retryable ? " Retry scheduled." : "";
+  await recordGenerationEvent(
+    generationId,
+    "processing",
+    `Attempt ${attemptNumber} failed.${suffix}`,
+  );
+}
+
+export async function markGenerationFailed(
+  generationId: string,
+  fallback?: { code?: string; message?: string; eventMessage?: string },
+) {
+  const [current] = await db
+    .select()
+    .from(generations)
+    .where(eq(generations.id, generationId))
+    .limit(1);
+
+  if (!current) throw new GenerationNotFoundError();
+  if (current.status === "completed" || current.status === "cancelled") {
+    return mapGenerationWithOutputs(current);
+  }
+
+  const message =
+    current.errorMessage ?? fallback?.message ?? "Image generation failed.";
+  const [failed] = await db
+    .update(generations)
+    .set({
+      status: "failed",
+      errorCode: current.errorCode ?? fallback?.code ?? "generation_failed",
+      errorMessage: message,
+      completedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(generations.id, generationId))
+    .returning();
+
+  if (!failed) throw new Error("Failed to mark generation as failed");
+
+  await recordGenerationEvent(
+    generationId,
+    "failed",
+    fallback?.eventMessage ?? message,
+  );
+  return mapGenerationWithOutputs(failed);
+}
+
+export async function runGenerationJob(
+  generationId: string,
+  options: { attempt?: number } = {},
+) {
   const [row] = await db
     .select()
     .from(generations)
@@ -439,56 +610,50 @@ export async function runGenerationJob(generationId: string) {
     return mapGenerationWithOutputs(row);
   }
 
-  const fail = async (message: string, errorCode = "generation_failed") => {
-    const [failed] = await db
-      .update(generations)
-      .set({
-        status: "failed",
-        errorCode,
-        errorMessage: message,
-        completedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(generations.id, generationId))
-      .returning();
-
-    await recordGenerationEvent(generationId, "failed", message);
-
-    if (!failed) {
-      throw new Error("Failed to mark generation as failed");
-    }
-
-    return mapGenerationWithOutputs(failed);
-  };
-
-  if (!isStorageConfigured()) {
-    return fail("File storage is not configured", "storage_not_configured");
-  }
-
-  if (!hasXaiApiKey()) {
-    return fail("Image generation is not configured", "image_not_configured");
-  }
-
-  if (!row.projectId) {
-    return fail("Generation is missing a project", "invalid_generation");
-  }
-
+  const attempt = Math.max(0, options.attempt ?? 0);
   const startedAt = new Date();
 
-  await db
+  const [processing] = await db
     .update(generations)
     .set({
       status: "processing",
-      startedAt,
+      startedAt: row.startedAt ?? startedAt,
       updatedAt: startedAt,
       errorCode: null,
       errorMessage: null,
+      ...(attempt > 0
+        ? {
+            retryCount: sql`greatest(${generations.retryCount}, ${attempt})`,
+          }
+        : {}),
     })
-    .where(eq(generations.id, generationId));
+    .where(eq(generations.id, generationId))
+    .returning();
 
-  await recordGenerationEvent(generationId, "processing", "Generation started");
+  const attemptNumber = (processing?.retryCount ?? row.retryCount) + 1;
+  await recordGenerationEvent(
+    generationId,
+    "processing",
+    `Generation attempt ${attemptNumber} started`,
+  );
 
   try {
+    if (!isStorageConfigured()) {
+      throw new StorageNotConfiguredError();
+    }
+
+    if (!hasXaiApiKey()) {
+      throw new Error("Missing required environment variable: XAI_API_KEY");
+    }
+
+    if (!row.projectId) {
+      throw new GenerationJobError("Generation is missing a project", {
+        code: "generation_invalid_input",
+        retryable: false,
+        userMessage: "Generation is missing a project.",
+      });
+    }
+
     const referenceImageUrls = await loadReferenceImageUrls(
       row.workspaceId,
       row.projectId,
@@ -504,7 +669,7 @@ export async function runGenerationJob(generationId: string) {
 
     const bucket = storageEnv.bucket;
     if (!bucket) {
-      return fail("File storage is not configured", "storage_not_configured");
+      throw new StorageNotConfiguredError();
     }
 
     const { buffer, contentType } = image;
@@ -589,9 +754,9 @@ export async function runGenerationJob(generationId: string) {
 
     return mapGenerationWithOutputs(completed);
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Generation failed unexpectedly";
-    return fail(message);
+    const jobError = classifyGenerationJobError(error);
+    await recordGenerationAttemptFailure(generationId, attemptNumber, jobError);
+    throw jobError;
   }
 }
 

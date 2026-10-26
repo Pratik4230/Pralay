@@ -9,6 +9,7 @@ import {
   getProjectGenerationResponseSchema,
   invalidGenerationInputAssetsError,
   projectNotFoundError,
+  retryProjectGenerationResponseSchema,
   unauthorizedError,
   workspaceNotFoundError,
 } from "@repo/validators";
@@ -82,6 +83,36 @@ export const getProjectGenerationRoute = createRoute({
     },
     404: {
       description: "Not found",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+  },
+});
+
+export const retryProjectGenerationRoute = createRoute({
+  method: "post",
+  path: "/api/v1/workspaces/{id}/projects/{projectId}/generations/{generationId}/retry",
+  tags: ["Generations"],
+  summary: "Retry a failed project generation",
+  description:
+    "Moves a failed generation back to queued and starts a new retry-safe Inngest run.",
+  request: { params: generationParams },
+  responses: {
+    200: {
+      description: "Generation queued for retry",
+      content: {
+        "application/json": { schema: retryProjectGenerationResponseSchema },
+      },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+    404: {
+      description: "Not found",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+    409: {
+      description: "Generation is not failed",
       content: { "application/json": { schema: apiErrorSchema } },
     },
   },

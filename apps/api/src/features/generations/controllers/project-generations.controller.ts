@@ -4,9 +4,11 @@ import {
   createProjectGenerationBodySchema,
   createProjectGenerationResponseSchema,
   generationNotFoundError,
+  generationNotRetryableError,
   getProjectGenerationResponseSchema,
   invalidGenerationInputAssetsError,
   projectNotFoundError,
+  retryProjectGenerationResponseSchema,
   unauthorizedError,
   workspaceNotFoundError,
 } from "@repo/validators";
@@ -16,9 +18,11 @@ import { WorkspaceAccessError } from "../../workspace/services/workspace-access.
 import {
   createProjectGeneration,
   GenerationNotFoundError,
+  GenerationNotRetryableError,
   getProjectGeneration,
   InvalidGenerationInputAssetsError,
   ProjectNotFoundError,
+  retryProjectGeneration,
   StorageNotConfiguredError,
 } from "../services/project-generations.service.js";
 
@@ -120,6 +124,47 @@ export async function getProjectGenerationController(
     }
     if (error instanceof GenerationNotFoundError) {
       return c.json(generationNotFoundError, 404);
+    }
+    throw error;
+  }
+}
+
+export async function retryProjectGenerationController(
+  c: Context<{ Variables: AuthVariables }>,
+) {
+  const session = c.get("session");
+  if (!session) return c.json(unauthorizedError, 401);
+
+  const workspaceId = c.req.param("id");
+  const projectId = c.req.param("projectId");
+  const generationId = c.req.param("generationId");
+  if (!workspaceId || !projectId || !generationId) {
+    return c.json(generationNotFoundError, 404);
+  }
+
+  try {
+    const generation = await retryProjectGeneration(
+      session.user.id,
+      workspaceId,
+      projectId,
+      generationId,
+    );
+    return c.json(
+      retryProjectGenerationResponseSchema.parse({ generation }),
+      200,
+    );
+  } catch (error) {
+    if (error instanceof WorkspaceAccessError) {
+      return c.json(workspaceNotFoundError, 404);
+    }
+    if (
+      error instanceof ProjectNotFoundError ||
+      error instanceof GenerationNotFoundError
+    ) {
+      return c.json(generationNotFoundError, 404);
+    }
+    if (error instanceof GenerationNotRetryableError) {
+      return c.json(generationNotRetryableError, 409);
     }
     throw error;
   }

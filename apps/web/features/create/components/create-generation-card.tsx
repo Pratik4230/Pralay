@@ -2,14 +2,18 @@
 
 import Image from "next/image";
 import { useEffect } from "react";
-import { Loader2Icon } from "lucide-react";
+import { Loader2Icon, RotateCcwIcon } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 import { cn } from "@repo/ui/lib/utils";
+import { Button } from "@repo/ui/components/button";
 
-import { useProjectGeneration } from "@/features/create/hooks/use-project-generation";
+import {
+  useProjectGeneration,
+  useRetryProjectGeneration,
+} from "@/features/create/hooks/use-project-generation";
 import type { CreateGenerationBlock } from "@/features/create/types/create-ui";
-import { isActiveGenerationStatus } from "@/features/create/utils/map-generation-summary";
 import { workspaceKeys } from "@/features/workspace/utils/query-keys";
 import { getMediaUrl } from "@/global/utils/media-url";
 
@@ -25,10 +29,14 @@ export function CreateGenerationCard({
   generation,
 }: CreateGenerationCardProps) {
   const queryClient = useQueryClient();
-  const shouldPoll = isActiveGenerationStatus(generation.status);
   const live = useProjectGeneration(workspaceId, projectId, generation.id, {
-    pollWhileActive: shouldPoll,
+    pollWhileActive: true,
   });
+  const retry = useRetryProjectGeneration(
+    workspaceId,
+    projectId,
+    generation.id,
+  );
 
   const status = (live.data?.generation.status ??
     generation.status) as CreateGenerationBlock["status"];
@@ -66,11 +74,39 @@ export function CreateGenerationCard({
 
   if (status === "failed" || status === "cancelled") {
     return (
-      <div className="mt-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-        {errorMessage ||
-          (status === "cancelled"
-            ? "Generation was cancelled."
-            : "Generation failed. Please try again.")}
+      <div className="mt-3 space-y-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+        <p>
+          {errorMessage ||
+            (status === "cancelled"
+              ? "Generation was cancelled."
+              : "Generation failed. Please try again.")}
+        </p>
+        {status === "failed" ? (
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            disabled={retry.isPending}
+            onClick={() => {
+              retry.mutate(undefined, {
+                onError: (error) => {
+                  toast.error(
+                    error instanceof Error
+                      ? error.message
+                      : "Could not retry generation",
+                  );
+                },
+              });
+            }}
+          >
+            {retry.isPending ? (
+              <Loader2Icon className="animate-spin" />
+            ) : (
+              <RotateCcwIcon />
+            )}
+            Retry generation
+          </Button>
+        ) : null}
       </div>
     );
   }

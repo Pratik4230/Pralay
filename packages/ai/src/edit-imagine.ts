@@ -1,4 +1,9 @@
 import { GROK_IMAGINE_MODEL } from "./constants.js";
+import {
+  ImageGenerationError,
+  isRetryableHttpStatus,
+  parseRetryAfterMs,
+} from "./image-generation-error.js";
 
 const XAI_EDITS_URL = "https://api.x.ai/v1/images/edits";
 
@@ -54,26 +59,43 @@ export async function editImagineWithReferences(
     body.aspect_ratio = input.aspectRatio;
   }
 
-  const response = await fetch(XAI_EDITS_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${input.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+  let response: Response;
+  try {
+    response = await fetch(XAI_EDITS_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${input.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    throw new ImageGenerationError("Could not reach xAI image editing", {
+      code: "provider_request_failed",
+      retryable: true,
+      cause: error,
+    });
+  }
 
-  const payload = (await response.json()) as XaiImageResponse;
+  const payload = (await response.json().catch(() => ({}))) as XaiImageResponse;
 
   if (!response.ok) {
     const message =
       payload.error?.message ?? `xAI image edit failed (${response.status})`;
-    throw new Error(message);
+    throw new ImageGenerationError(message, {
+      code: "provider_request_failed",
+      retryable: isRetryableHttpStatus(response.status),
+      status: response.status,
+      retryAfterMs: parseRetryAfterMs(response.headers.get("retry-after")),
+    });
   }
 
   const url = payload.data?.[0]?.url;
   if (!url) {
-    throw new Error("xAI image edit returned no image URL");
+    throw new ImageGenerationError("xAI image edit returned no image URL", {
+      code: "provider_response_invalid",
+      retryable: true,
+    });
   }
 
   return {

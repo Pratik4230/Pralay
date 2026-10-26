@@ -1,7 +1,4 @@
-export {
-  GROK_IMAGINE_MODEL,
-  GROK_IMAGINE_PROVIDER,
-} from "./constants.js";
+export { GROK_IMAGINE_MODEL, GROK_IMAGINE_PROVIDER } from "./constants.js";
 export { downloadBinary, type DownloadedBinary } from "./download.js";
 export {
   generateProjectImage,
@@ -9,6 +6,12 @@ export {
   type ProjectImageGenerateInput,
   type ProjectImageGenerateResult,
 } from "./generate-project-image.js";
+export {
+  ImageGenerationError,
+  isRetryableHttpStatus,
+  parseRetryAfterMs,
+  type ImageGenerationErrorCode,
+} from "./image-generation-error.js";
 export {
   generateImagineImage,
   type ImagineGenerateInput,

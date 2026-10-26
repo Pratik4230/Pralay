@@ -1,15 +1,36 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { Generation } from "@repo/validators";
 
 import { CREATE_GENERATION_POLL_MS } from "@/features/create/constants/create-timing";
-import { fetchProjectGeneration } from "@/features/create/utils/fetch-project-generation";
+import {
+  fetchProjectGeneration,
+  retryProjectGeneration,
+} from "@/features/create/utils/fetch-project-generation";
 import { createKeys } from "@/features/create/utils/query-keys";
 
 function isGenerationActive(status: Generation["status"]) {
   return status === "queued" || status === "processing";
+}
+
+export function useRetryProjectGeneration(
+  workspaceId: string,
+  projectId: string,
+  generationId: string,
+) {
+  const queryClient = useQueryClient();
+  const queryKey = createKeys.generation(workspaceId, projectId, generationId);
+
+  return useMutation({
+    mutationFn: () =>
+      retryProjectGeneration(workspaceId, projectId, generationId),
+    onSuccess: (result) => {
+      queryClient.setQueryData(queryKey, result);
+      void queryClient.invalidateQueries({ queryKey });
+    },
+  });
 }
 
 export function useProjectGeneration(
