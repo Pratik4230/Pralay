@@ -12,6 +12,7 @@
   "dependencies": {
     "@langchain/core": "^1.1.8",
     "@langchain/langgraph": "^1.0.7",
+    "@langchain/langgraph-checkpoint-postgres": "1.0.5",
     "@langchain/openai": "^1.2.0",
     "@repo/env": "workspace:*",
     "@repo/validators": "workspace:*",

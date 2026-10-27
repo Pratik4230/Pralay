@@ -30,9 +30,11 @@ export function CreateComposerCaretProvider({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const caretListenersRef = useRef(new Set<() => void>());
   const queuedCaretRef = useRef<number | null>(null);
+  const lastNotifiedCaretRef = useRef<number | null>(null);
 
   const registerTextarea = useCallback((el: HTMLTextAreaElement | null) => {
     textareaRef.current = el;
+    lastNotifiedCaretRef.current = null;
   }, []);
 
   const getCaretIndex = useCallback(() => {
@@ -42,10 +44,14 @@ export function CreateComposerCaretProvider({
   }, []);
 
   const notifyCaretMove = useCallback(() => {
+    const caretIndex = getCaretIndex();
+    if (caretIndex === lastNotifiedCaretRef.current) return;
+    lastNotifiedCaretRef.current = caretIndex;
+
     for (const listener of caretListenersRef.current) {
       listener();
     }
-  }, []);
+  }, [getCaretIndex]);
 
   const subscribeCaretMove = useCallback((listener: () => void) => {
     caretListenersRef.current.add(listener);

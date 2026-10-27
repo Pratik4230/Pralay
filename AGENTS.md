@@ -4,6 +4,8 @@ https://hono.dev/llms.txt
 https://ai-sdk.dev/llms.txt
 https://docs.langchain.com/llms.txt
 
+Credentials: email: pratikjadhav1438@gmail.com password: Pratik@*777
+
 > Multi-workspace AI creative platform. **Conversational Create + asset references first**, video later.
 > Last updated: 2026-09-30
 
@@ -52,7 +54,7 @@ Create youtube thumbnail where Jonathan lifting trophy with his team and jelly i
 
 **Create state:** **Zustand** (`create-project-store`) for composer draft, **`stagedAssets`**, and active thread id per **`projectId`**. **Postgres** is source of truth for threads, messages, generations. No Create data in `localStorage`.
 
-**LangGraph persistence:** [`@langchain/langgraph-checkpoint-postgres`](https://langchain-ai.github.io/langgraphjs/reference/modules/langgraph-checkpoint-postgres.html) + [`checkpointers` guide](https://docs.langchain.com/oss/javascript/langgraph/checkpointers). Call `setup()` once per deploy. Product threads/messages live in **our** Drizzle tables; graph `thread_id` maps to `assistant_threads.id`.
+**LangGraph persistence:** [`@langchain/langgraph-checkpoint-postgres`](https://langchain-ai.github.io/langgraphjs/reference/modules/langgraph-checkpoint-postgres.html) is active. Run `bun run langgraph:setup` once per deploy. Product threads/messages remain in **our** Drizzle tables; graph `thread_id` maps to `assistant_runs.id` (or the user message id for legacy synchronous turns), while `assistant_thread_id` is carried in configurable metadata. LangGraph reserves `checkpoint_ns` for subgraphs. Product thread deletion removes checkpoints for its runs/messages.
 
 ---
 
@@ -199,7 +201,7 @@ packages/ai (providers) · packages/agents (LangGraph graphs + tools) — planne
 | ----------------------------------------------- | ------ | --------------------------------------------------------------------------- |
 | `assistant_threads` / `assistant_messages`      | ✅     | Create threads + messages API                                               |
 | Durable assistant runs + streaming              | ✅     | Persisted ordered events, real model deltas, reconnect, cancel, retry       |
-| `packages/agents` LangGraph + tools             | 🟡     | Tooling in API via `@repo/agents`; full LangGraph checkpointer TBD          |
+| `packages/agents` LangGraph + tools             | ✅     | Model and per-tool nodes with Postgres checkpoint resume                    |
 | OpenAI `gpt-5.6-luna` chat stream + titles      | ✅     | Stream route + thread titles                                                |
 | `packages/ai` Grok Imagine adapter              | 🟡     | Inngest worker path                                                         |
 | Generations API + Inngest                       | 🟡     | Retry-safe jobs, final failure handling, manual retry; polish observability |
@@ -208,7 +210,7 @@ packages/ai (providers) · packages/agents (LangGraph graphs + tools) — planne
 | **`WorkspaceAssetsUploadDialog`**               | ✅     | Create + Project Assets + Workspace Library                                 |
 | Env: `XAI_API_KEY`, `OPENAI_API_KEY`, Inngest   | 🟡     | Keys in `.env.example`; `@repo/env` `aiEnv` / getters; Inngest TBD          |
 | Create message body (`@repo/validators/create`) | ✅     | `createProjectMessageBodySchema`                                            |
-| Postgres LangGraph checkpointer                 | ⬜     | Separate from product message tables                                        |
+| Postgres LangGraph checkpointer                 | ✅     | Separate tables managed by `PostgresSaver.setup()`                          |
 | Brand kit / templates                           | ⬜     | Deferred                                                                    |
 
 ---
@@ -253,6 +255,7 @@ packages/ai (providers) · packages/agents (LangGraph graphs + tools) — planne
 docker compose -f infra/ec2/docker-compose.yml up
 bun run dev          # web + api + Inngest dev server (apps/inngest)
 bun run db:migrate
+bun run langgraph:setup # once per deploy; API dev startup also ensures setup
 ```
 
 Inngest Dev Server UI: `http://localhost:8288`. The worker syncs to `http://localhost:3001/api/inngest`. Set `INNGEST_DEV=1` in `.env`. Root `inngest-cli` needs its postinstall (listed in `trustedDependencies` in root `package.json`); if the CLI binary is missing, run `bun pm trust inngest-cli && bun install`.
@@ -317,7 +320,7 @@ See `.env.example`. Required for AI slice: `DATABASE_URL`, S3, `OPENAI_API_KEY`,
 3. ~~Assistant UI + Zustand + `@` (no composer uploads).~~ Done.
 4. ~~Shared upload dialog + Assets/Library.~~ Done.
 5. ~~Harden generation retries, Inngest, and assistant stream reliability.~~ Done.
-6. `packages/agents`: LangGraph checkpointer; optional `useLangGraphRuntime`.
+6. ~~`packages/agents`: LangGraph Postgres checkpointer.~~ Done.
 7. Edit/variation flows via new turns/tools (not composer scope creep).
 
 ---
@@ -330,4 +333,4 @@ See `.env.example`. Required for AI slice: `DATABASE_URL`, S3, `OPENAI_API_KEY`,
 | Create UX (frontend)   | ~65%     |
 | AI backend (Create)    | ~55%     |
 
-**Current focus:** LangGraph Postgres checkpointer, then edit/variation turns.
+**Current focus:** Edit/variation turns, then generation observability and usage accounting.

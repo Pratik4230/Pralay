@@ -1,5 +1,8 @@
 import { app } from "./app.js";
 import { env } from "./config/env.js";
+import { setupCreateChatCheckpointer } from "@repo/agents";
+
+await setupCreateChatCheckpointer();
 
 console.log(`Pralay API listening on http://localhost:${env.port}`);
 console.log(`OpenAPI docs: http://localhost:${env.port}/docs`);

@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, lt, or } from "drizzle-orm";
 
 import { db } from "@repo/db";
+import { deleteCreateChatCheckpoints } from "@repo/agents";
 import {
   assistantMessages,
   assistantRunEvents,
@@ -207,6 +208,27 @@ export async function deleteProjectAssistantThread(
     throw new WorkspaceForbiddenError();
   }
 
+  const [runCheckpointRows, messageCheckpointRows] = await Promise.all([
+    db
+      .select({ id: assistantRuns.id })
+      .from(assistantRuns)
+      .where(eq(assistantRuns.threadId, thread.id)),
+    db
+      .select({ id: assistantMessages.id })
+      .from(assistantMessages)
+      .where(eq(assistantMessages.threadId, thread.id)),
+  ]);
+  const checkpointThreadIds = new Set([
+    // Clean up checkpoints written by the earlier thread-keyed implementation.
+    thread.id,
+    ...runCheckpointRows.map((row) => row.id),
+    ...messageCheckpointRows.map((row) => row.id),
+  ]);
+  await Promise.all(
+    [...checkpointThreadIds].map((checkpointThreadId) =>
+      deleteCreateChatCheckpoints(checkpointThreadId),
+    ),
+  );
   await db.delete(assistantThreads).where(eq(assistantThreads.id, thread.id));
 
   return { success: true as const };
@@ -548,6 +570,7 @@ export async function processProjectAssistantTurn(params: {
       projectId,
       threadId: threadRow.id,
       userMessageId: userMessageRef.row.id,
+      runId,
       threadSummary: threadRow.summary,
       history,
       userPrompt: body.prompt,

@@ -7,6 +7,14 @@ import {
   type BaseMessage,
 } from "@langchain/core/messages";
 import { ChatOpenAI } from "@langchain/openai";
+import {
+  Annotation,
+  END,
+  START,
+  StateGraph,
+  messagesStateReducer,
+  type BaseCheckpointSaver,
+} from "@langchain/langgraph";
 import { randomUUID } from "node:crypto";
 
 import { getOpenAiApiKey } from "@repo/env";
@@ -22,6 +30,7 @@ import {
   assertSafeCreateToolResult,
   logCreateChatPayloadTelemetry,
 } from "./create-chat-payload-safety.js";
+import { getCreateChatCheckpointer } from "./create-chat-checkpointer.js";
 
 export type CreateChatHistoryMessage = {
   role: "user" | "assistant" | "system";
@@ -55,6 +64,7 @@ export type RunCreateChatTurnInput = {
   projectId: string;
   threadId?: string;
   userMessageId?: string;
+  runId?: string;
   threadSummary: string | null;
   history: CreateChatHistoryMessage[];
   userPrompt: string;
@@ -67,6 +77,9 @@ export type RunCreateChatTurnInput = {
 
 export type CreateChatRunContext = {
   toolHandlers: CreateChatToolHandlers;
+  /** Override for tests. Production turns use the shared Postgres saver. */
+  checkpointer?: BaseCheckpointSaver;
+  disableCheckpointing?: boolean;
   events?: {
     onModelStart?: (iteration: number) => Promise<void> | void;
     onTextDelta?: (delta: string) => Promise<void> | void;
@@ -76,6 +89,21 @@ export type CreateChatRunContext = {
 };
 
 const MAX_TOOL_ITERATIONS = 12;
+
+const CreateChatState = Annotation.Root({
+  messages: Annotation<BaseMessage[], BaseMessage | BaseMessage[]>({
+    reducer: messagesStateReducer,
+    default: () => [],
+  }),
+  iteration: Annotation<number>(),
+  nextToolIndex: Annotation<number>(),
+  finalText: Annotation<string>(),
+  requestId: Annotation<string>(),
+});
+
+type CreateChatStateValue = typeof CreateChatState.State;
+type CreateToolCall = NonNullable<AIMessage["tool_calls"]>[number];
+type CreateChatStateUpdate = typeof CreateChatState.Update;
 
 function buildSystemContent(input: RunCreateChatTurnInput): string {
   const parts = [CREATE_SYSTEM_PROMPT];
@@ -186,6 +214,46 @@ async function invokeToolHandler(
   }
 }
 
+function latestAiToolCalls(state: CreateChatStateValue): CreateToolCall[] {
+  for (let index = state.messages.length - 1; index >= 0; index -= 1) {
+    const message = state.messages[index];
+    if (AIMessage.isInstance(message)) return message.tool_calls ?? [];
+  }
+  return [];
+}
+
+function createCheckpointConfig(input: RunCreateChatTurnInput) {
+  if (!input.threadId || !input.userMessageId) return null;
+  const checkpointThreadId = input.runId ?? input.userMessageId;
+  return {
+    configurable: {
+      // LangGraph owns checkpoint_ns and resets it to "" for a root graph.
+      // A durable assistant run therefore needs its own checkpointer thread.
+      thread_id: checkpointThreadId,
+      assistant_thread_id: input.threadId,
+      assistant_run_id: checkpointThreadId,
+    },
+  };
+}
+
+export function createCreateChatWorkflow(nodes: {
+  callModel: (
+    state: CreateChatStateValue,
+  ) => Promise<CreateChatStateUpdate> | CreateChatStateUpdate;
+  callTool: (
+    state: CreateChatStateValue,
+  ) => Promise<CreateChatStateUpdate> | CreateChatStateUpdate;
+}) {
+  return new StateGraph(CreateChatState)
+    .addNode("model", nodes.callModel)
+    .addNode("tool", nodes.callTool)
+    .addEdge(START, "model")
+    .addConditionalEdges("model", (state) => (state.finalText ? END : "tool"))
+    .addConditionalEdges("tool", (state) =>
+      state.nextToolIndex >= latestAiToolCalls(state).length ? "model" : "tool",
+    );
+}
+
 export async function runCreateChatTurn(
   input: RunCreateChatTurnInput,
   context: CreateChatRunContext,
@@ -198,17 +266,18 @@ export async function runCreateChatTurn(
   const tools = createCreateChatTools(context.toolHandlers);
   const modelWithTools = model.bindTools(tools);
 
-  let messages: BaseMessage[] = toLangChainMessages(input);
-  const requestId = randomUUID();
+  const callModel = async (state: CreateChatStateValue) => {
+    if (state.iteration >= MAX_TOOL_ITERATIONS) {
+      throw new Error("Create chat exceeded maximum tool iterations");
+    }
 
-  for (let step = 0; step < MAX_TOOL_ITERATIONS; step += 1) {
-    const payload = assertSafeCreateChatPayload(messages);
-    await context.events?.onModelStart?.(step);
+    const payload = assertSafeCreateChatPayload(state.messages);
+    await context.events?.onModelStart?.(state.iteration);
 
     let response: AIMessage | AIMessageChunk;
     if (context.events?.onTextDelta) {
       let aggregate: AIMessageChunk | undefined;
-      const stream = await modelWithTools.stream(messages);
+      const stream = await modelWithTools.stream(state.messages);
       for await (const chunk of stream) {
         aggregate = aggregate ? aggregate.concat(chunk) : chunk;
         const delta = extractMessageText(chunk.content);
@@ -219,8 +288,9 @@ export async function runCreateChatTurn(
       }
       response = aggregate;
     } else {
-      response = await modelWithTools.invoke(messages);
+      response = await modelWithTools.invoke(state.messages);
     }
+
     const metadata = response.response_metadata as {
       headers?: Record<string, string>;
     };
@@ -233,59 +303,100 @@ export async function runCreateChatTurn(
         )
       : undefined;
     logCreateChatPayloadTelemetry({
-      requestId,
+      requestId: state.requestId,
       threadId: input.threadId,
       userMessageId: input.userMessageId,
-      iteration: step,
+      iteration: state.iteration,
       ...payload,
       toolResultChars: 0,
       inputTokens: response.usage_metadata?.input_tokens,
       outputTokens: response.usage_metadata?.output_tokens,
       rateLimits,
     });
-    const toolCalls = response.tool_calls ?? [];
 
+    const toolCalls = response.tool_calls ?? [];
+    let finalText = "";
     if (toolCalls.length === 0) {
-      const content = extractMessageText(response.content).trim();
-      if (!content) {
+      finalText = extractMessageText(response.content).trim();
+      if (!finalText) {
         throw new Error("Create chat model returned empty content");
       }
-      return content;
     }
 
-    messages = [...messages, response];
+    return {
+      messages: [response],
+      iteration: state.iteration + 1,
+      nextToolIndex: 0,
+      finalText,
+    };
+  };
 
-    for (const call of toolCalls) {
-      const toolCallId = call.id ?? `${call.name}-${step}`;
-      let output: string;
+  const callTool = async (state: CreateChatStateValue) => {
+    const call = latestAiToolCalls(state)[state.nextToolIndex];
+    if (!call) throw new Error("Create chat tool checkpoint is invalid");
 
-      try {
-        await context.events?.onToolStart?.(call.name);
-        output = await invokeToolHandler(
-          call.name,
-          (call.args ?? {}) as Record<string, unknown>,
-          context.toolHandlers,
-        );
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Tool execution failed";
-        output = JSON.stringify({ error: message });
-      } finally {
-        await context.events?.onToolEnd?.(call.name);
-      }
+    const toolCallId = call.id ?? `${call.name}-${state.iteration}`;
+    let output: string;
+    try {
+      await context.events?.onToolStart?.(call.name);
+      output = await invokeToolHandler(
+        call.name,
+        (call.args ?? {}) as Record<string, unknown>,
+        context.toolHandlers,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Tool execution failed";
+      output = JSON.stringify({ error: message });
+    } finally {
+      await context.events?.onToolEnd?.(call.name);
+    }
 
-      assertSafeCreateToolResult(output);
-
-      messages.push(
+    assertSafeCreateToolResult(output);
+    return {
+      messages: [
         new ToolMessage({
           tool_call_id: toolCallId,
           content: output,
         }),
-      );
-    }
+      ],
+      nextToolIndex: state.nextToolIndex + 1,
+    };
+  };
+
+  const workflow = createCreateChatWorkflow({ callModel, callTool });
+
+  const checkpointConfig = createCheckpointConfig(input);
+  const checkpointer =
+    !context.disableCheckpointing && checkpointConfig
+      ? (context.checkpointer ?? getCreateChatCheckpointer())
+      : context.checkpointer;
+  const graph = workflow.compile({ checkpointer });
+
+  const initialState: CreateChatStateValue = {
+    messages: toLangChainMessages(input),
+    iteration: 0,
+    nextToolIndex: 0,
+    finalText: "",
+    requestId: randomUUID(),
+  };
+
+  let result: CreateChatStateValue;
+  if (checkpointConfig && checkpointer) {
+    const snapshot = await graph.getState(checkpointConfig);
+    const saved = snapshot.values as Partial<CreateChatStateValue>;
+    if (saved.finalText) return saved.finalText;
+    result = saved.messages?.length
+      ? await graph.invoke(null, checkpointConfig)
+      : await graph.invoke(initialState, checkpointConfig);
+  } else {
+    result = await graph.invoke(initialState);
   }
 
-  throw new Error("Create chat exceeded maximum tool iterations");
+  if (!result.finalText) {
+    throw new Error("Create chat graph completed without final content");
+  }
+  return result.finalText;
 }
 
 export async function* streamCreateChatTurn(

@@ -22,3 +22,5 @@ export {
   inngestEnv,
   isInngestDevMode,
 } from "./inngest.js";
+
+export { getDatabaseUrl } from "./database.js";

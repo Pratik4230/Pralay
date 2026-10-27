@@ -53,6 +53,7 @@ type ChatTurnInput = {
   projectId: string;
   threadId?: string;
   userMessageId?: string;
+  runId?: string;
   threadSummary: string | null;
   history: CreateChatHistoryMessage[];
   userPrompt: string;
