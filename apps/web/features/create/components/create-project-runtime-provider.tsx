@@ -277,23 +277,30 @@ export function CreateProjectRuntimeProvider({
   }, [activeThreadId, followRun, messagesQuery.data]);
 
   // Submit once, then follow persisted run events until a terminal state.
+  // Editor turns use this path without replacing the user's unsent composer draft.
   // ---------------------------------------------------------------------------
-  const onNew = useCallback(
-    async (message: AppendMessage) => {
-      const text = extractUserText(message).trim();
-      const staged =
-        useCreateProjectStore.getState().byProject[projectId]?.stagedAssets ??
-        [];
-      const libraryAssets = resolveCreateSendReferenceAssets(staged, text);
-
-      if (!text && libraryAssets.length === 0) return;
-
-      const prompt = text || "Generate using the attached reference images.";
+  const submitTurn = useCallback(
+    async (input: {
+      prompt: string;
+      referenceAssetIds: string[];
+      editSourceAssetId?: string;
+      enqueueGeneration?: boolean;
+      generationType?: "generate" | "resize";
+      resizeWidth?: number;
+      resizeHeight?: number;
+      clearComposer: boolean;
+      onAccepted?: () => void;
+    }) => {
+      if (streamAbortRef.current) {
+        throw new Error(
+          "Wait for the current response before starting another edit.",
+        );
+      }
       const slice = useCreateProjectStore.getState().byProject[projectId];
-
-      // Clear draft + staged immediately (synchronous, no race condition).
-      useCreateProjectStore.getState().setDraft(projectId, "");
-      useCreateProjectStore.getState().clearStagedAssets(projectId);
+      if (input.clearComposer) {
+        useCreateProjectStore.getState().setDraft(projectId, "");
+        useCreateProjectStore.getState().clearStagedAssets(projectId);
+      }
 
       setIsRunning(true);
       setStreamedAssistant(null);
@@ -306,8 +313,13 @@ export function CreateProjectRuntimeProvider({
           projectId,
           {
             threadId: slice?.activeThreadId ?? undefined,
-            prompt,
-            referenceAssetIds: libraryAssets.map((a) => a.id),
+            prompt: input.prompt,
+            referenceAssetIds: input.referenceAssetIds,
+            editSourceAssetId: input.editSourceAssetId,
+            enqueueGeneration: input.enqueueGeneration,
+            generationType: input.generationType,
+            resizeWidth: input.resizeWidth,
+            resizeHeight: input.resizeHeight,
             chatModelId: slice?.session.chatModelId ?? "gpt-5.6-luna",
           },
         );
@@ -315,11 +327,13 @@ export function CreateProjectRuntimeProvider({
           .getState()
           .setActiveThreadId(projectId, result.thread.id);
         reconcileThread(result.thread.id);
+        input.onAccepted?.();
         await followRun(result.run.id, result.thread.id, abortController);
       } catch (error) {
         if (!abortController.signal.aborted) {
           console.error("[create] stream failed", error);
         }
+        throw error;
       } finally {
         if (streamAbortRef.current === abortController) {
           streamAbortRef.current = null;
@@ -328,6 +342,67 @@ export function CreateProjectRuntimeProvider({
       }
     },
     [followRun, projectId, reconcileThread, workspaceId],
+  );
+
+  const onNew = useCallback(
+    async (message: AppendMessage) => {
+      const text = extractUserText(message).trim();
+      const staged =
+        useCreateProjectStore.getState().byProject[projectId]?.stagedAssets ??
+        [];
+      const libraryAssets = resolveCreateSendReferenceAssets(staged, text);
+      if (!text && libraryAssets.length === 0) return;
+      try {
+        await submitTurn({
+          prompt: text || "Generate using the attached reference images.",
+          referenceAssetIds: libraryAssets.map((asset) => asset.id),
+          clearComposer: true,
+        });
+      } catch {
+        // The shared submit path logs the error; the composer remains available.
+      }
+    },
+    [projectId, submitTurn],
+  );
+
+  const submitImageEdit = useCallback(
+    async (
+      asset: { id: string; name: string },
+      instruction: string,
+      onAccepted: () => void,
+    ) => {
+      const trimmed = instruction.trim();
+      if (!trimmed) throw new Error("Describe the change you want to make.");
+      await submitTurn({
+        prompt: `Edit @${asset.name}: ${trimmed}`,
+        referenceAssetIds: [asset.id],
+        editSourceAssetId: asset.id,
+        clearComposer: false,
+        onAccepted,
+      });
+    },
+    [submitTurn],
+  );
+
+  const submitImageResize = useCallback(
+    async (
+      asset: { id: string; name: string },
+      width: number,
+      height: number,
+      onAccepted: () => void,
+    ) => {
+      await submitTurn({
+        prompt: `Resize @${asset.name} to ${width} × ${height} px using a centered crop.`,
+        referenceAssetIds: [asset.id],
+        clearComposer: false,
+        enqueueGeneration: true,
+        generationType: "resize",
+        resizeWidth: width,
+        resizeHeight: height,
+        onAccepted,
+      });
+    },
+    [submitTurn],
   );
 
   const onCancel = useCallback(async () => {
@@ -385,18 +460,20 @@ export function CreateProjectRuntimeProvider({
   });
 
   return (
-    <CreateGenerationsProvider
-      workspaceId={workspaceId}
-      projectId={projectId}
-      byMessageId={generationsByMessageId}
-    >
-      <AssistantRuntimeProvider runtime={runtime}>
+    <AssistantRuntimeProvider runtime={runtime}>
+      <CreateGenerationsProvider
+        workspaceId={workspaceId}
+        projectId={projectId}
+        byMessageId={generationsByMessageId}
+        submitImageEdit={submitImageEdit}
+        submitImageResize={submitImageResize}
+      >
         <CreateComposerSessionRestore
           workspaceId={workspaceId}
           projectId={projectId}
         />
         {children}
-      </AssistantRuntimeProvider>
-    </CreateGenerationsProvider>
+      </CreateGenerationsProvider>
+    </AssistantRuntimeProvider>
   );
 }

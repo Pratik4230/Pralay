@@ -24,8 +24,11 @@ export {
 export {
   createPresignedDownloadUrl,
   createPresignedUploadUrl,
+  getObjectBuffer,
   getMediaUrl,
   getS3Client,
   putObjectBuffer,
 } from "./presign.js";
 export { createImageThumbnail } from "./thumbnail.js";
+export { inspectGeneratedImage } from "./image-metadata.js";
+export { resizeImageBuffer } from "./resize-image.js";

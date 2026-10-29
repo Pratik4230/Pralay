@@ -9,7 +9,7 @@ export const getMediaRoute = createRoute({
   tags: ["Media"],
   summary: "Resolve media URL",
   description:
-    "Redirects to a CDN or presigned S3 URL for a stored object key.",
+    "Authorizes a stored image key and redirects to a short-lived presigned S3 URL.",
   request: {
     query: z.object({
       key: z.string().min(1).max(512),

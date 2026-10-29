@@ -16,14 +16,19 @@ import {
   GenerationNotFoundError,
   getProjectGeneration,
   InvalidGenerationInputAssetsError,
+  InvalidGenerationSourceError,
   StorageNotConfiguredError,
 } from "../../generations/services/project-generations.service.js";
 import type { MessageRow } from "./project-assistant.service.js";
 import { mapMessage } from "./project-assistant.service.js";
-import { validateCreateGenerationReferenceSelection } from "./create-generation-reference-selection.js";
+import {
+  resolveEditorReferences,
+  resolveCreateGenerationMode,
+  validateCreateGenerationReferenceSelection,
+} from "./create-generation-reference-selection.js";
 
 const CREATE_UPLOAD_HINT =
-  "Use the + attach button in the composer to upload a reference image and set its name (example: jonathan), or type @ to pick from the library.";
+  "Upload a reference image with the folder button, then type @ to pick it from the library.";
 
 async function assertAssetsForProject(
   workspaceId: string,
@@ -206,9 +211,17 @@ export function createCreateChatToolHandlers(input: {
         };
       }
 
-      const selectedReferences = references ?? [];
+      const selectedReferences = resolveEditorReferences({
+        editSourceAssetId: input.body.editSourceAssetId,
+        modelReferences: references,
+      });
+      const resolvedMode = resolveCreateGenerationMode({
+        requestedMode: input.body.editSourceAssetId ? "edit" : mode,
+        firstAssetId: selectedReferences[0]?.assetId,
+        authorizedCandidates: candidateById,
+      });
       const selection = validateCreateGenerationReferenceSelection({
-        mode,
+        mode: resolvedMode,
         references: selectedReferences,
         authorizedCandidateIds,
         authorizedCandidates: candidateById,
@@ -242,7 +255,7 @@ export function createCreateChatToolHandlers(input: {
           inputAssetIds: selectedIds,
           aspectRatio: aspectRatio ?? input.body.aspectRatio,
           referenceRoles,
-          type: mode,
+          type: resolvedMode,
         });
 
         input.setUserMessageRow(linked.userMessageRow);
@@ -267,7 +280,14 @@ export function createCreateChatToolHandlers(input: {
             generationId: "",
             status: "failed",
             message:
-              "One or more reference assets are invalid. Search the library, use @, or upload with the + attach button.",
+              "One or more reference images are invalid. Search the library, use @, or upload with the folder button.",
+          };
+        }
+        if (error instanceof InvalidGenerationSourceError) {
+          return {
+            generationId: "",
+            status: "failed",
+            message: error.message,
           };
         }
         throw error;

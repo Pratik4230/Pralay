@@ -74,6 +74,8 @@ export function mapAssistantMessageToCreateMessage(
     generation = {
       id: message.generationId,
       status: "queued",
+      type: "generate",
+      parentGenerationId: null,
       prompt: message.content,
       referenceNames,
     };

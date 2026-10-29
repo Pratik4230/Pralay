@@ -124,7 +124,7 @@ function buildSystemContent(input: RunCreateChatTurnInput): string {
 
   if (input.referenceCandidates && input.referenceCandidates.length > 0) {
     parts.push(
-      `Authorized reference candidates from the current message and this thread. You may choose zero to five of these in start_generation. The list is metadata only; never invent IDs. Provenance "generated" means a completed output that can be used as the base for a variation:\n${JSON.stringify(input.referenceCandidates)}`,
+      `Authorized reference candidates from the current message and this thread. You may choose zero to five of these in start_generation. The list is metadata only; never invent IDs. Provenance "generated" means a completed output that can be edited:\n${JSON.stringify(input.referenceCandidates)}`,
     );
   }
 
@@ -191,10 +191,7 @@ async function invokeToolHandler(
     case "start_generation":
       return JSON.stringify(
         await handlers.startGeneration({
-          mode:
-            args.mode === "edit" || args.mode === "variation"
-              ? args.mode
-              : "generate",
+          mode: args.mode === "edit" ? "edit" : "generate",
           aspectRatio:
             typeof args.aspectRatio === "string" ? args.aspectRatio : undefined,
           prompt: typeof args.prompt === "string" ? args.prompt : undefined,

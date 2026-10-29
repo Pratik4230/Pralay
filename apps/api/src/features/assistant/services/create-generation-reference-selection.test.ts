@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import type { CreateChatReferenceCandidate } from "@repo/agents";
 
-import { validateCreateGenerationReferenceSelection } from "./create-generation-reference-selection.js";
+import {
+  resolveCreateGenerationMode,
+  resolveEditorReferences,
+  validateCreateGenerationReferenceSelection,
+} from "./create-generation-reference-selection.js";
 
 function candidate(
   id: string,
@@ -25,11 +29,28 @@ function candidate(
 }
 
 describe("Create generation reference selection", () => {
-  test("preserves an exact authorized order", () => {
+  test("pins the clicked editor image ahead of model-selected references", () => {
+    expect(
+      resolveEditorReferences({
+        editSourceAssetId: "clicked-image",
+        modelReferences: [{ assetId: "other-image", role: "base" }],
+      }),
+    ).toEqual([{ assetId: "clicked-image", role: "source" }]);
+  });
+
+  test("keeps ordinary chat reference selection unchanged", () => {
+    expect(
+      resolveEditorReferences({
+        modelReferences: [{ assetId: "chat-image", role: "reference" }],
+      }),
+    ).toEqual([{ assetId: "chat-image", role: "reference" }]);
+  });
+
+  test("preserves an exact authorized edit order", () => {
     const generated = candidate("generated", true);
     const identity = candidate("identity");
     const result = validateCreateGenerationReferenceSelection({
-      mode: "variation",
+      mode: "edit",
       references: [
         { assetId: generated.id, role: "base" },
         { assetId: identity.id, role: "identity" },
@@ -62,15 +83,15 @@ describe("Create generation reference selection", () => {
     expect(result.ok).toBe(false);
   });
 
-  test("requires a generated first reference for variations", () => {
-    const regular = candidate("regular");
-    const result = validateCreateGenerationReferenceSelection({
-      mode: "variation",
-      references: [{ assetId: regular.id, role: "base" }],
-      authorizedCandidates: new Map([[regular.id, regular]]),
+  test("keeps generated source changes in edit mode", () => {
+    const generated = candidate("generated", true);
+    const result = resolveCreateGenerationMode({
+      requestedMode: "edit",
+      firstAssetId: generated.id,
+      authorizedCandidates: new Map([[generated.id, generated]]),
     });
 
-    expect(result.ok).toBe(false);
+    expect(result).toBe("edit");
   });
 
   test("rejects an unauthorized candidate", () => {

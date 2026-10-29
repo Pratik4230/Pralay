@@ -9,6 +9,8 @@ export function mapGenerationSummaryToCreateBlock(
   return {
     id: summary.id,
     status: summary.status,
+    type: summary.type,
+    parentGenerationId: summary.parentGenerationId,
     prompt: summary.prompt,
     referenceNames,
     errorMessage: summary.errorMessage,
@@ -17,6 +19,9 @@ export function mapGenerationSummaryToCreateBlock(
       name: asset.name,
       s3Key: asset.s3Key,
       mimeType: asset.mimeType,
+      width: asset.width,
+      height: asset.height,
+      sizeBytes: asset.sizeBytes,
     })),
   };
 }

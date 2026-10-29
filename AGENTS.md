@@ -4,6 +4,9 @@ https://hono.dev/llms.txt
 https://ai-sdk.dev/llms.txt
 https://docs.langchain.com/llms.txt
 
+Images.md
+pralay-image-studio-spec.md
+
 Credentials: email: pratikjadhav1438@gmail.com password: Pratik@*777
 
 > Multi-workspace AI creative platform. **Conversational Create + asset references first**, video later.
@@ -219,7 +222,7 @@ packages/ai (providers) · packages/agents (LangGraph graphs + tools) — planne
 
 | Phase | Focus                                  |
 | ----- | -------------------------------------- |
-| 3     | Editor, variations, history gallery    |
+| 3     | Editor, resize, history gallery        |
 | 4     | Batch, usage/credits, presets UI       |
 | 5     | Production hardening, Terraform, CI/CD |
 | 6     | Video pipeline (post-image stability)  |
@@ -289,7 +292,7 @@ See `.env.example`. Required for AI slice: `DATABASE_URL`, S3, `OPENAI_API_KEY`,
 | Item                      | Purpose                                                 |
 | ------------------------- | ------------------------------------------------------- |
 | LangGraph runtime adapter | Optional swap from external store when graph is primary |
-| Edit/variation turns      | Extend send contract, not composer uploads              |
+| Edit/resize turns         | Extend send contract, not composer uploads              |
 
 ### Planned — backend / workers
 
@@ -321,7 +324,7 @@ See `.env.example`. Required for AI slice: `DATABASE_URL`, S3, `OPENAI_API_KEY`,
 4. ~~Shared upload dialog + Assets/Library.~~ Done.
 5. ~~Harden generation retries, Inngest, and assistant stream reliability.~~ Done.
 6. ~~`packages/agents`: LangGraph Postgres checkpointer.~~ Done.
-7. Edit/variation flows via new turns/tools (not composer scope creep).
+7. ~~Edit and resize flows via new turns/tools (not composer scope creep).~~ Done. Uploaded and generated images support AI edits and deterministic resize. Source assets and parent generations are persisted.
 
 ---
 
@@ -333,4 +336,4 @@ See `.env.example`. Required for AI slice: `DATABASE_URL`, S3, `OPENAI_API_KEY`,
 | Create UX (frontend)   | ~65%     |
 | AI backend (Create)    | ~55%     |
 
-**Current focus:** Edit/variation turns, then generation observability and usage accounting.
+**Current focus:** Generation observability and usage accounting, then history gallery.

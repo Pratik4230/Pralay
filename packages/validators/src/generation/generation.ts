@@ -29,12 +29,23 @@ export const generationOutputAssetPreviewSchema = z.object({
   name: z.string(),
   s3Key: z.string(),
   mimeType: z.string(),
+  width: z.number().int().positive().nullable(),
+  height: z.number().int().positive().nullable(),
+  sizeBytes: z.number().int().nonnegative(),
+});
+
+export const generationEventSchema = z.object({
+  id: z.uuid(),
+  status: generationStatusSchema,
+  createdAt: z.iso.datetime(),
 });
 
 /** Embedded on assistant list-messages for Create generation cards (no extra GET on reload). */
 export const assistantMessageGenerationSummarySchema = z.object({
   id: z.uuid(),
   status: generationStatusSchema,
+  type: generationTypeSchema,
+  parentGenerationId: z.uuid().nullable(),
   prompt: z.string(),
   errorMessage: z.string().nullable(),
   outputAssets: z.array(generationOutputAssetPreviewSchema).default([]),
@@ -50,10 +61,15 @@ export const generationSchema = z.object({
   projectId: z.uuid().nullable(),
   status: generationStatusSchema,
   type: generationTypeSchema,
+  parentGenerationId: z.uuid().nullable(),
   prompt: z.string(),
   inputAssetIds: z.array(z.uuid()),
+  inputAssets: z.array(generationOutputAssetPreviewSchema),
   outputAssetIds: z.array(z.uuid()),
   outputAssets: z.array(generationOutputAssetPreviewSchema).default([]),
+  events: z.array(generationEventSchema),
+  width: z.number().int().positive().nullable(),
+  height: z.number().int().positive().nullable(),
   aspectRatio: z.string().nullable(),
   provider: z.string().nullable(),
   model: z.string().nullable(),
@@ -66,12 +82,39 @@ export const generationSchema = z.object({
   completedAt: z.iso.datetime().nullable(),
 });
 
-export const createProjectGenerationBodySchema = z.object({
-  prompt: createPromptTextSchema,
-  inputAssetIds: createReferenceAssetIdsSchema.default([]),
-  presetKey: createPresetKeySchema.optional(),
-  aspectRatio: createAspectRatioSchema.optional(),
-});
+export const createProjectGenerationBodySchema = z
+  .object({
+    type: z.enum(["generate", "resize"]).default("generate"),
+    prompt: createPromptTextSchema,
+    inputAssetIds: createReferenceAssetIdsSchema.default([]),
+    presetKey: createPresetKeySchema.optional(),
+    aspectRatio: createAspectRatioSchema.optional(),
+    width: z.number().int().min(1).max(8_192).optional(),
+    height: z.number().int().min(1).max(8_192).optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.type !== "resize") return;
+    if (value.inputAssetIds.length !== 1) {
+      context.addIssue({
+        code: "custom",
+        path: ["inputAssetIds"],
+        message: "Resize requires exactly one source image",
+      });
+    }
+    if (!value.width || !value.height) {
+      context.addIssue({
+        code: "custom",
+        path: ["width"],
+        message: "Resize requires width and height",
+      });
+    } else if (value.width * value.height > 40_000_000) {
+      context.addIssue({
+        code: "custom",
+        path: ["width"],
+        message: "Resize output must not exceed 40 megapixels",
+      });
+    }
+  });
 
 export const createProjectGenerationResponseSchema = z.object({
   generation: generationSchema,

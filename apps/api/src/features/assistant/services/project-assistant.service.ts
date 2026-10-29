@@ -435,6 +435,9 @@ export async function sendProjectAssistantMessage(
         prompt: input.prompt,
         inputAssetIds: input.referenceAssetIds,
         aspectRatio: input.aspectRatio,
+        type: input.generationType,
+        width: input.resizeWidth,
+        height: input.resizeHeight,
       });
       userMessageRow = linked.userMessageRow;
     } catch (error) {
@@ -533,6 +536,27 @@ export async function processProjectAssistantTurn(params: {
   const { actorUserId, workspaceId, projectId, threadRow, body, runId } =
     params;
   const userMessageRef = { row: params.userMessageRow };
+
+  // Deterministic operations such as resize are linked before the run starts.
+  // Do not spend a model call or allow the agent to enqueue a second job.
+  if (userMessageRef.row.generationId) {
+    await appendAssistantRunEvent(runId, "generation", {
+      generationId: userMessageRef.row.generationId,
+      userMessage: mapMessage(userMessageRef.row),
+    });
+    const completed = await completeAssistantTurn({
+      threadRow,
+      userMessageRow: userMessageRef.row,
+      prompt: body.prompt,
+      assistantContent: null,
+    });
+    await completeAssistantRun({
+      runId,
+      assistantMessageId: completed.assistantMessage?.id ?? null,
+      outcome: "generation_started",
+    });
+    return;
+  }
 
   const history = await loadCreateChatHistory(threadRow.id, {
     id: userMessageRef.row.id,
@@ -675,6 +699,9 @@ export async function submitProjectAssistantMessage(
         prompt: input.prompt,
         inputAssetIds: input.referenceAssetIds,
         aspectRatio: input.aspectRatio,
+        type: input.generationType,
+        width: input.resizeWidth,
+        height: input.resizeHeight,
       });
       userMessageRow = linked.userMessageRow;
     } catch (error) {

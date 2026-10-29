@@ -52,7 +52,7 @@ export async function editImagineWithReferences(
   const body: Record<string, unknown> = {
     model,
     prompt: input.prompt,
-    images: urls.map((url) => ({ url })),
+    images: urls.map((url) => ({ type: "image_url", url })),
   };
 
   if (input.aspectRatio) {

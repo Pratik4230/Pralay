@@ -66,6 +66,10 @@ export const generations = pgTable(
       .array()
       .notNull()
       .default(sql`'{}'::uuid[]`),
+    parentGenerationId: uuid("parent_generation_id").references(
+      (): AnyPgColumn => generations.id,
+      { onDelete: "set null" },
+    ),
     batchId: uuid("batch_id").references((): AnyPgColumn => generations.id, {
       onDelete: "set null",
     }),
@@ -96,5 +100,6 @@ export const generations = pgTable(
     ),
     index("generations_project_id_idx").on(table.projectId),
     index("generations_batch_id_idx").on(table.batchId),
+    index("generations_parent_generation_id_idx").on(table.parentGenerationId),
   ],
 );

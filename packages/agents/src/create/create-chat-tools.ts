@@ -9,7 +9,7 @@ export type StartGenerationToolResult = {
   message: string;
 };
 
-export type CreateGenerationMode = "generate" | "edit" | "variation";
+export type CreateGenerationMode = "generate" | "edit";
 
 export type CreateGenerationReference = {
   assetId: string;
@@ -132,9 +132,9 @@ export function createCreateChatTools(handlers: CreateChatToolHandlers) {
     {
       name: "start_generation",
       description:
-        "Queue a new image, edit, or variation. Choose the exact ordered set of at most five authorized reference candidates. For a variation, put the generated base image first.",
+        "Queue a new image or edit. Choose the exact ordered set of at most five authorized reference candidates. For an edit, put the source image first.",
       schema: z.object({
-        mode: z.enum(["generate", "edit", "variation"]),
+        mode: z.enum(["generate", "edit"]),
         aspectRatio: createAspectRatioSchema
           .optional()
           .describe("Optional ratio such as 16:9"),

@@ -54,16 +54,45 @@ export const createAttachedAssetRefSchema = z.object({
  * Body for sending a Create message (chat + optional generation intent).
  * Used by assistant stream and generation enqueue once wired.
  */
-export const createProjectMessageBodySchema = z.object({
-  threadId: z.uuid().optional(),
-  prompt: createPromptTextSchema,
-  referenceAssetIds: createReferenceCandidateAssetIdsSchema.default([]),
-  chatModelId: createChatModelIdSchema.default("gpt-5.6-luna"),
-  presetKey: createPresetKeySchema.optional(),
-  aspectRatio: createAspectRatioSchema.optional(),
-  /** When true, enqueue Grok Imagine on send without waiting for the agent tool. Default false: use start_generation. */
-  enqueueGeneration: z.boolean().default(false),
-});
+export const createProjectMessageBodySchema = z
+  .object({
+    threadId: z.uuid().optional(),
+    prompt: createPromptTextSchema,
+    referenceAssetIds: createReferenceCandidateAssetIdsSchema.default([]),
+    /** Exact image selected in the editor. The generation tool must use it as its base. */
+    editSourceAssetId: z.uuid().optional(),
+    chatModelId: createChatModelIdSchema.default("gpt-5.6-luna"),
+    presetKey: createPresetKeySchema.optional(),
+    aspectRatio: createAspectRatioSchema.optional(),
+    /** Enqueue a deterministic operation on send without waiting for the agent tool. */
+    enqueueGeneration: z.boolean().default(false),
+    generationType: z.enum(["generate", "resize"]).default("generate"),
+    resizeWidth: z.number().int().min(1).max(8_192).optional(),
+    resizeHeight: z.number().int().min(1).max(8_192).optional(),
+  })
+  .superRefine((value, context) => {
+    if (!value.enqueueGeneration || value.generationType !== "resize") return;
+    if (value.referenceAssetIds.length !== 1) {
+      context.addIssue({
+        code: "custom",
+        path: ["referenceAssetIds"],
+        message: "Resize requires exactly one source image",
+      });
+    }
+    if (!value.resizeWidth || !value.resizeHeight) {
+      context.addIssue({
+        code: "custom",
+        path: ["resizeWidth"],
+        message: "Resize requires width and height",
+      });
+    } else if (value.resizeWidth * value.resizeHeight > 40_000_000) {
+      context.addIssue({
+        code: "custom",
+        path: ["resizeWidth"],
+        message: "Resize output must not exceed 40 megapixels",
+      });
+    }
+  });
 
 export type CreateChatModelId = z.infer<typeof createChatModelIdSchema>;
 export type CreatePresetKey = z.infer<typeof createPresetKeySchema>;

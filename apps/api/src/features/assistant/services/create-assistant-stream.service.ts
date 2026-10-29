@@ -172,6 +172,9 @@ export async function* iterateProjectAssistantMessageStream(
           prompt: body.prompt,
           inputAssetIds: body.referenceAssetIds,
           aspectRatio: body.aspectRatio,
+          type: body.generationType,
+          width: body.resizeWidth,
+          height: body.resizeHeight,
         });
         userMessageRow = linked.userMessageRow;
         userMessageRef.row = userMessageRow;

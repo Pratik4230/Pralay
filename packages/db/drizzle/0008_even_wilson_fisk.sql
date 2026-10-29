@@ -1,0 +1,3 @@
+ALTER TABLE "generations" ADD COLUMN "parent_generation_id" uuid;--> statement-breakpoint
+ALTER TABLE "generations" ADD CONSTRAINT "generations_parent_generation_id_generations_id_fk" FOREIGN KEY ("parent_generation_id") REFERENCES "public"."generations"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "generations_parent_generation_id_idx" ON "generations" USING btree ("parent_generation_id");

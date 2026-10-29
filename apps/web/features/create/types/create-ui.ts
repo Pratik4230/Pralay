@@ -5,11 +5,7 @@ export type CreateModelTier = "auto" | "cheap" | "default" | "premium";
 export type { CreateChatModelId };
 
 export type CreateGenerationUiStatus =
-  | "queued"
-  | "processing"
-  | "completed"
-  | "failed"
-  | "cancelled";
+  "queued" | "processing" | "completed" | "failed" | "cancelled";
 
 export type CreateMessageRole = "user" | "assistant";
 
@@ -23,6 +19,8 @@ export type CreateAttachedAsset = {
 export type CreateGenerationBlock = {
   id: string;
   status: CreateGenerationUiStatus;
+  type: "generate" | "edit" | "variation" | "resize" | "batch_item";
+  parentGenerationId: string | null;
   prompt: string;
   referenceNames: string[];
   errorMessage?: string | null;
@@ -31,6 +29,9 @@ export type CreateGenerationBlock = {
     name: string;
     s3Key: string;
     mimeType: string;
+    width: number | null;
+    height: number | null;
+    sizeBytes: number;
   }>;
 };
 

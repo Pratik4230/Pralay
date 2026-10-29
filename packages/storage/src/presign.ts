@@ -58,6 +58,26 @@ export async function createPresignedDownloadUrl(input: {
   return getSignedUrl(getS3Client(), command, { expiresIn });
 }
 
+export async function getObjectBuffer(input: {
+  key: string;
+  maxBytes?: number;
+}) {
+  const bucket = storageEnv.bucket;
+  if (!bucket) {
+    throw new Error("S3_BUCKET is not configured");
+  }
+
+  const response = await getS3Client().send(
+    new GetObjectCommand({ Bucket: bucket, Key: input.key }),
+  );
+  const bytes = await response.Body?.transformToByteArray();
+  if (!bytes) throw new Error("Stored object is empty");
+  if (bytes.byteLength > (input.maxBytes ?? 32 * 1024 * 1024)) {
+    throw new Error("Stored object exceeds the processing size limit");
+  }
+  return Buffer.from(bytes);
+}
+
 export async function putObjectBuffer(input: {
   key: string;
   contentType: string;

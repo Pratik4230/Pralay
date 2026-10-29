@@ -57,6 +57,13 @@
       "when": 1793034725770,
       "tag": "0007_rainy_starjammers",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793123572704,
+      "tag": "0008_even_wilson_fisk",
+      "breakpoints": true
     }
   ]
 }

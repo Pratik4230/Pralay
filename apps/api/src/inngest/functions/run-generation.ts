@@ -14,7 +14,7 @@ export const runGeneration = inngest.createFunction(
     triggers: [{ event: "pralay/generation.requested" }],
     retries: 4,
     singleton: { key: "event.data.generationId", mode: "skip" },
-    onFailure: async ({ event, error, step }) => {
+    onFailure: async ({ event, step }) => {
       const originalEvent = event.data.event as {
         data?: { generationId?: unknown };
       };
@@ -26,7 +26,7 @@ export const runGeneration = inngest.createFunction(
       await step.run("mark-generation-failed", async () => {
         try {
           await markGenerationFailed(generationId, {
-            eventMessage: error.message,
+            eventMessage: "Generation failed after all attempts.",
           });
         } catch (failureError) {
           if (failureError instanceof GenerationNotFoundError) return;

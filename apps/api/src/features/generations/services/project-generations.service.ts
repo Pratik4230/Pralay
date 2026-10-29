@@ -14,8 +14,11 @@ import { hasXaiApiKey } from "@repo/env";
 import {
   buildGeneratedAssetKey,
   createPresignedDownloadUrl,
+  getObjectBuffer,
+  inspectGeneratedImage,
   isStorageConfigured,
   putObjectBuffer,
+  resizeImageBuffer,
   storageEnv,
 } from "@repo/storage";
 import type { CreateProjectGenerationBody } from "@repo/validators";
@@ -53,6 +56,15 @@ export class InvalidGenerationReferenceCountError extends Error {
   }
 }
 
+export class InvalidGenerationSourceError extends Error {
+  constructor(
+    message = "Choose a valid image from this project as the source",
+  ) {
+    super(message);
+    this.name = "InvalidGenerationSourceError";
+  }
+}
+
 export class StorageNotConfiguredError extends Error {
   constructor() {
     super("File storage is not configured");
@@ -74,6 +86,15 @@ type OutputAssetPreview = {
   name: string;
   s3Key: string;
   mimeType: string;
+  width: number | null;
+  height: number | null;
+  sizeBytes: number;
+};
+
+type GenerationEventPreview = {
+  id: string;
+  status: GenerationRow["status"];
+  createdAt: string;
 };
 
 async function loadOutputAssetPreviews(
@@ -89,6 +110,9 @@ async function loadOutputAssetPreviews(
       name: assets.name,
       s3Key: assets.s3Key,
       mimeType: assets.mimeType,
+      width: assets.width,
+      height: assets.height,
+      sizeBytes: assets.sizeBytes,
     })
     .from(assets)
     .where(inArray(assets.id, outputAssetIds));
@@ -99,6 +123,8 @@ async function loadOutputAssetPreviews(
 export function mapGeneration(
   row: GenerationRow,
   outputAssets: OutputAssetPreview[] = [],
+  events: GenerationEventPreview[] = [],
+  inputAssets: OutputAssetPreview[] = [],
 ) {
   return {
     id: row.id,
@@ -108,8 +134,13 @@ export function mapGeneration(
     type: row.type,
     prompt: row.prompt,
     inputAssetIds: row.inputAssetIds,
+    inputAssets,
+    parentGenerationId: row.parentGenerationId,
     outputAssetIds: row.outputAssetIds,
     outputAssets,
+    events,
+    width: row.width,
+    height: row.height,
     aspectRatio: row.aspectRatio,
     provider: row.provider,
     model: row.model,
@@ -124,13 +155,38 @@ export function mapGeneration(
 }
 
 export async function mapGenerationWithOutputs(row: GenerationRow) {
-  const outputAssets = await loadOutputAssetPreviews(row.outputAssetIds);
-  return mapGeneration(row, outputAssets);
+  const [outputAssets, inputAssets, eventRows] = await Promise.all([
+    loadOutputAssetPreviews(row.outputAssetIds),
+    loadOutputAssetPreviews(row.inputAssetIds),
+    db
+      .select({
+        id: generationEvents.id,
+        status: generationEvents.status,
+        createdAt: generationEvents.createdAt,
+      })
+      .from(generationEvents)
+      .where(eq(generationEvents.generationId, row.id))
+      .orderBy(generationEvents.createdAt, generationEvents.id),
+  ]);
+  return mapGeneration(
+    row,
+    outputAssets,
+    eventRows.map((event) => ({
+      id: event.id,
+      status: event.status,
+      createdAt: event.createdAt.toISOString(),
+    })),
+    row.inputAssetIds
+      .map((id) => inputAssets.find((asset) => asset.id === id))
+      .filter((asset): asset is OutputAssetPreview => Boolean(asset)),
+  );
 }
 
 export type AssistantMessageGenerationSummary = {
   id: string;
   status: GenerationRow["status"];
+  type: GenerationRow["type"];
+  parentGenerationId: string | null;
   prompt: string;
   errorMessage: string | null;
   outputAssets: OutputAssetPreview[];
@@ -166,6 +222,8 @@ export async function loadAssistantMessageGenerationSummaries(
     result.set(row.id, {
       id: row.id,
       status: row.status,
+      type: row.type,
+      parentGenerationId: row.parentGenerationId,
       prompt: row.prompt,
       errorMessage: row.errorMessage,
       outputAssets,
@@ -185,7 +243,7 @@ async function assertInputAssets(
   }
 
   const rows = await db
-    .select({ id: assets.id })
+    .select({ id: assets.id, mimeType: assets.mimeType })
     .from(assets)
     .where(
       and(
@@ -199,7 +257,10 @@ async function assertInputAssets(
       ),
     );
 
-  if (rows.length !== inputAssetIds.length) {
+  if (
+    rows.length !== inputAssetIds.length ||
+    rows.some((row) => !row.mimeType.startsWith("image/"))
+  ) {
     throw new InvalidGenerationInputAssetsError();
   }
 }
@@ -241,7 +302,6 @@ async function loadReferenceImageUrls(
 
   const urls: string[] = [];
   for (const row of rows) {
-    if (!row.mimeType.startsWith("image/")) continue;
     urls.push(
       await createPresignedDownloadUrl({
         key: row.s3Key,
@@ -251,6 +311,60 @@ async function loadReferenceImageUrls(
   }
 
   return urls;
+}
+
+async function resolveSourceGeneration(input: {
+  workspaceId: string;
+  projectId: string;
+  type: GenerationRow["type"];
+  inputAssetIds: string[];
+}): Promise<string | null> {
+  const baseAssetId = input.inputAssetIds[0];
+  if (
+    input.type !== "edit" &&
+    input.type !== "variation" &&
+    input.type !== "resize"
+  )
+    return null;
+  if (!baseAssetId) {
+    throw new InvalidGenerationSourceError(
+      "An edit or resize needs a source image.",
+    );
+  }
+
+  const [source] = await db
+    .select({ metadata: assets.metadata, type: assets.type })
+    .from(assets)
+    .where(
+      and(
+        eq(assets.id, baseAssetId),
+        eq(assets.workspaceId, input.workspaceId),
+        eq(assets.primaryProjectId, input.projectId),
+        isNull(assets.deletedAt),
+      ),
+    )
+    .limit(1);
+  const sourceId = source?.metadata?.generationId;
+  if (typeof sourceId !== "string") return null;
+  if (source?.type !== "generated" && source?.type !== "edited") return null;
+
+  const [parent] = await db
+    .select({ id: generations.id, outputAssetIds: generations.outputAssetIds })
+    .from(generations)
+    .where(
+      and(
+        eq(generations.id, sourceId),
+        eq(generations.workspaceId, input.workspaceId),
+        eq(generations.projectId, input.projectId),
+        eq(generations.status, "completed"),
+        isNull(generations.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!parent?.outputAssetIds.includes(baseAssetId)) {
+    throw new InvalidGenerationSourceError();
+  }
+  return parent.id;
 }
 
 async function recordGenerationEvent(
@@ -274,6 +388,8 @@ export type InsertProjectGenerationInput = {
   aspectRatio?: string | null;
   referenceRoles?: Record<string, string>;
   type?: GenerationRow["type"];
+  width?: number | null;
+  height?: number | null;
 };
 
 export async function insertQueuedProjectGeneration(
@@ -286,12 +402,23 @@ export async function insertQueuedProjectGeneration(
     throw new InvalidGenerationReferenceCountError();
   }
   const inputAssetIds = input.inputAssetIds;
+  await assertInputAssets(input.workspaceId, input.projectId, inputAssetIds);
+  const generationType = input.type ?? "generate";
+  const parentGenerationId = await resolveSourceGeneration({
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    type: generationType,
+    inputAssetIds,
+  });
   const referenceRoles = Object.fromEntries(
     Object.entries(input.referenceRoles ?? {}).filter(([assetId]) =>
       inputAssetIds.includes(assetId),
     ),
   );
-  const { provider, model } = resolveImageGenerationDefaults();
+  const defaults =
+    generationType === "resize"
+      ? { provider: "sharp", model: null }
+      : resolveImageGenerationDefaults();
 
   const generation = await db.transaction(async (tx) => {
     const [created] = await tx
@@ -300,14 +427,17 @@ export async function insertQueuedProjectGeneration(
         workspaceId: input.workspaceId,
         projectId: input.projectId,
         createdBy: input.createdBy,
-        type: input.type ?? "generate",
+        type: generationType,
+        parentGenerationId,
         status: "queued",
         prompt: input.prompt,
         inputAssetIds,
         aspectRatio: input.aspectRatio ?? null,
         referenceRoles,
-        provider,
-        model,
+        provider: defaults.provider,
+        model: defaults.model,
+        width: input.width ?? null,
+        height: input.height ?? null,
         variationCount: 1,
       })
       .returning();
@@ -332,7 +462,7 @@ export async function insertQueuedProjectGeneration(
       data: { generationId: generation.id },
     });
     return generation;
-  } catch (error) {
+  } catch {
     const [failed] = await db
       .update(generations)
       .set({
@@ -347,7 +477,7 @@ export async function insertQueuedProjectGeneration(
     await recordGenerationEvent(
       generation.id,
       "failed",
-      error instanceof Error ? error.message : "Failed to enqueue generation",
+      "The generation could not be queued.",
     );
     return failed ?? generation;
   }
@@ -364,6 +494,8 @@ export async function attachGenerationToAssistantUserMessage(input: {
   aspectRatio?: string | null;
   referenceRoles?: Record<string, string>;
   type?: GenerationRow["type"];
+  width?: number | null;
+  height?: number | null;
 }) {
   if (!isStorageConfigured()) {
     throw new StorageNotConfiguredError();
@@ -384,6 +516,8 @@ export async function attachGenerationToAssistantUserMessage(input: {
     aspectRatio: input.aspectRatio,
     referenceRoles: input.referenceRoles,
     type: input.type,
+    width: input.width,
+    height: input.height,
   });
 
   const [updatedMessage] = await db
@@ -424,6 +558,9 @@ export async function createProjectGeneration(
     prompt: input.prompt,
     inputAssetIds: input.inputAssetIds,
     aspectRatio: input.aspectRatio,
+    type: input.type,
+    width: input.width,
+    height: input.height,
   });
 
   return mapGenerationWithOutputs(generation);
@@ -518,12 +655,10 @@ export async function retryProjectGeneration(
       data: { generationId },
     });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to enqueue generation";
     await markGenerationFailed(generationId, {
       code: "generation_failed",
       message: "The generation could not be queued. Please try again.",
-      eventMessage: message,
+      eventMessage: "The generation could not be queued.",
     });
     throw error;
   }
@@ -642,7 +777,7 @@ export async function runGenerationJob(
       throw new StorageNotConfiguredError();
     }
 
-    if (!hasXaiApiKey()) {
+    if (row.type !== "resize" && !hasXaiApiKey()) {
       throw new Error("Missing required environment variable: XAI_API_KEY");
     }
 
@@ -654,18 +789,70 @@ export async function runGenerationJob(
       });
     }
 
-    const referenceImageUrls = await loadReferenceImageUrls(
-      row.workspaceId,
-      row.projectId,
-      row.inputAssetIds,
-    );
+    if (
+      (row.type === "edit" ||
+        row.type === "variation" ||
+        row.type === "resize") &&
+      row.inputAssetIds.length === 0
+    ) {
+      throw new GenerationJobError("An edit or resize needs a source image", {
+        code: "generation_invalid_input",
+        retryable: false,
+        userMessage: "Choose a source image and try again.",
+      });
+    }
 
-    const image = await generateProjectImage({
-      prompt: row.prompt,
-      aspectRatio: row.aspectRatio ?? undefined,
-      model: row.model,
-      referenceImageUrls,
-    });
+    let image: {
+      buffer: Buffer;
+      contentType: string;
+      revisedPrompt?: string;
+    };
+
+    if (row.type === "resize") {
+      if (row.inputAssetIds.length !== 1 || !row.width || !row.height) {
+        throw new GenerationJobError("Resize settings are incomplete", {
+          code: "generation_invalid_input",
+          retryable: false,
+          userMessage: "Choose valid resize dimensions and try again.",
+        });
+      }
+      const [source] = await db
+        .select({ s3Key: assets.s3Key, mimeType: assets.mimeType })
+        .from(assets)
+        .where(
+          and(
+            eq(assets.id, row.inputAssetIds[0]!),
+            eq(assets.workspaceId, row.workspaceId),
+            isNull(assets.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (!source) {
+        throw new GenerationJobError("Resize source image was not found", {
+          code: "generation_invalid_input",
+          retryable: false,
+          userMessage: "The source image is no longer available.",
+        });
+      }
+      const sourceBytes = await getObjectBuffer({ key: source.s3Key });
+      image = await resizeImageBuffer(sourceBytes, {
+        width: row.width,
+        height: row.height,
+        contentType: source.mimeType,
+      });
+    } else {
+      const referenceImageUrls = await loadReferenceImageUrls(
+        row.workspaceId,
+        row.projectId,
+        row.inputAssetIds,
+      );
+      image = await generateProjectImage({
+        prompt: row.prompt,
+        aspectRatio: row.aspectRatio ?? undefined,
+        model: row.model,
+        referenceImageUrls,
+      });
+    }
 
     const bucket = storageEnv.bucket;
     if (!bucket) {
@@ -673,6 +860,17 @@ export async function runGenerationJob(
     }
 
     const { buffer, contentType } = image;
+    let dimensions: { width: number; height: number };
+    try {
+      dimensions = await inspectGeneratedImage(buffer);
+    } catch (error) {
+      throw new GenerationJobError("Provider returned an invalid image", {
+        code: "generation_download_failed",
+        retryable: false,
+        userMessage: "The image provider returned an invalid image.",
+        cause: error,
+      });
+    }
 
     const s3Key = buildGeneratedAssetKey(
       row.workspaceId,
@@ -698,16 +896,25 @@ export async function runGenerationJob(
           workspaceId: row.workspaceId,
           primaryProjectId: row.projectId,
           name: assetName,
-          type: "generated",
+          type: row.type === "generate" ? "generated" : "edited",
+          sourceAssetId:
+            row.type === "edit" ||
+            row.type === "variation" ||
+            row.type === "resize"
+              ? row.inputAssetIds[0]
+              : null,
           category: "other",
           visibility: "project",
           mimeType: contentType,
           sizeBytes: buffer.byteLength,
+          width: dimensions.width,
+          height: dimensions.height,
           s3Bucket: bucket,
           s3Key,
           createdBy: row.createdBy,
           metadata: {
             generationId,
+            parentGenerationId: row.parentGenerationId,
             revisedPrompt: image.revisedPrompt ?? null,
           },
         })
@@ -729,6 +936,8 @@ export async function runGenerationJob(
         .set({
           status: "completed",
           outputAssetIds: [asset.id],
+          width: dimensions.width,
+          height: dimensions.height,
           providerRequestId: null,
           completedAt,
           updatedAt: completedAt,
