@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import {
+  DownloadIcon,
   Loader2Icon,
   Maximize2Icon,
   RotateCcwIcon,
@@ -21,7 +22,7 @@ import {
 import type { CreateGenerationBlock } from "@/features/create/types/create-ui";
 import { CreateImageEditorDialog } from "@/features/create/components/create-image-editor-dialog";
 import { workspaceKeys } from "@/features/workspace/utils/query-keys";
-import { getMediaUrl } from "@/global/utils/media-url";
+import { getMediaDownloadUrl, getMediaUrl } from "@/global/utils/media-url";
 
 type CreateGenerationCardProps = {
   workspaceId: string;
@@ -89,6 +90,9 @@ export function CreateGenerationCard({
   }, [outputAsset, queryClient, status, workspaceId]);
 
   const previewUrl = outputAsset ? getMediaUrl(outputAsset.s3Key) : null;
+  const downloadUrl = outputAsset
+    ? getMediaDownloadUrl(outputAsset.s3Key)
+    : null;
   const label =
     type === "resize"
       ? "Resize"
@@ -149,12 +153,22 @@ export function CreateGenerationCard({
           >
             <Maximize2Icon /> Resize
           </Button>
+          {downloadUrl ? (
+            <Button asChild size="xs" variant="outline">
+              <a href={downloadUrl}>
+                <DownloadIcon /> Download Image
+              </a>
+            </Button>
+          ) : null}
         </div>
         {timeline}
         {outputAsset && (
           <CreateImageEditorDialog
             open={editorOpen}
             onOpenChange={setEditorOpen}
+            workspaceId={workspaceId}
+            projectId={projectId}
+            generationId={generation.id}
             generation={live.data?.generation}
             outputAsset={outputAsset}
             type={type}

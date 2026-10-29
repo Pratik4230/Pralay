@@ -15,7 +15,9 @@ export const createKeys = {
       threadId,
       "messages",
     ] as const,
-  generation: (
+  generation: (workspaceId: string, projectId: string, generationId: string) =>
+    ["create", workspaceId, projectId, "generations", generationId] as const,
+  generationHistory: (
     workspaceId: string,
     projectId: string,
     generationId: string,
@@ -26,5 +28,6 @@ export const createKeys = {
       projectId,
       "generations",
       generationId,
+      "history",
     ] as const,
 };

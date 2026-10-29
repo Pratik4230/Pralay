@@ -43,6 +43,7 @@ export async function createPresignedUploadUrl(input: {
 export async function createPresignedDownloadUrl(input: {
   key: string;
   expiresIn?: number;
+  downloadName?: string;
 }) {
   const bucket = storageEnv.bucket;
   if (!bucket) {
@@ -50,9 +51,18 @@ export async function createPresignedDownloadUrl(input: {
   }
 
   const expiresIn = input.expiresIn ?? 3600;
+  const safeDownloadName = input.downloadName
+    ?.replace(/["\\\r\n]/g, "_")
+    .slice(0, 180);
+  const asciiDownloadName = safeDownloadName
+    ?.normalize("NFKD")
+    .replace(/[^\x20-\x7E]/g, "_");
   const command = new GetObjectCommand({
     Bucket: bucket,
     Key: input.key,
+    ResponseContentDisposition: safeDownloadName
+      ? `attachment; filename="${asciiDownloadName || "image"}"; filename*=UTF-8''${encodeURIComponent(safeDownloadName)}`
+      : undefined,
   });
 
   return getSignedUrl(getS3Client(), command, { expiresIn });

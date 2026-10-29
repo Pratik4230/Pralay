@@ -214,6 +214,7 @@ packages/ai (providers) · packages/agents (LangGraph graphs + tools) — planne
 | Env: `XAI_API_KEY`, `OPENAI_API_KEY`, Inngest   | 🟡     | Keys in `.env.example`; `@repo/env` `aiEnv` / getters; Inngest TBD          |
 | Create message body (`@repo/validators/create`) | ✅     | `createProjectMessageBodySchema`                                            |
 | Postgres LangGraph checkpointer                 | ✅     | Separate tables managed by `PostgresSaver.setup()`                          |
+| Image revision history + downloads             | ✅     | Immutable lineage rail, compare, reuse older sources, authenticated download |
 | Brand kit / templates                           | ⬜     | Deferred                                                                    |
 
 ---
@@ -325,6 +326,7 @@ See `.env.example`. Required for AI slice: `DATABASE_URL`, S3, `OPENAI_API_KEY`,
 5. ~~Harden generation retries, Inngest, and assistant stream reliability.~~ Done.
 6. ~~`packages/agents`: LangGraph Postgres checkpointer.~~ Done.
 7. ~~Edit and resize flows via new turns/tools (not composer scope creep).~~ Done. Uploaded and generated images support AI edits and deterministic resize. Source assets and parent generations are persisted.
+8. ~~Image revision history and downloads.~~ Done. The editor exposes immutable lineage, before/after comparison, older revision reuse, and authenticated image downloads.
 
 ---
 

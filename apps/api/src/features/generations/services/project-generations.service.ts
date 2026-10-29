@@ -594,6 +594,121 @@ export async function getProjectGeneration(
   return mapGenerationWithOutputs(row);
 }
 
+export async function getProjectGenerationHistory(
+  actorUserId: string,
+  workspaceId: string,
+  projectId: string,
+  generationId: string,
+) {
+  await requireWorkspaceMembership(actorUserId, workspaceId);
+
+  const lineageIds = await db.execute<{ id: string }>(sql`
+    with recursive ancestors as (
+      select id, parent_generation_id
+      from generations
+      where id = ${generationId}
+        and workspace_id = ${workspaceId}
+        and project_id = ${projectId}
+        and deleted_at is null
+      union all
+      select parent.id, parent.parent_generation_id
+      from generations parent
+      inner join ancestors child on child.parent_generation_id = parent.id
+      where parent.workspace_id = ${workspaceId}
+        and parent.project_id = ${projectId}
+        and parent.deleted_at is null
+    ),
+    root as (
+      select candidate.id
+      from ancestors candidate
+      left join ancestors parent on parent.id = candidate.parent_generation_id
+      where parent.id is null
+      limit 1
+    ),
+    lineage as (
+      select generation.id
+      from generations generation
+      inner join root on root.id = generation.id
+      union all
+      select child.id
+      from generations child
+      inner join lineage parent on child.parent_generation_id = parent.id
+      where child.workspace_id = ${workspaceId}
+        and child.project_id = ${projectId}
+        and child.deleted_at is null
+    )
+    select id from lineage limit 100
+  `);
+
+  const ids = lineageIds.map((row) => row.id);
+  if (ids.length === 0) throw new GenerationNotFoundError();
+
+  const rows = await db
+    .select()
+    .from(generations)
+    .where(
+      and(
+        inArray(generations.id, ids),
+        eq(generations.workspaceId, workspaceId),
+        eq(generations.projectId, projectId),
+        isNull(generations.deletedAt),
+      ),
+    );
+
+  const assetIds = [
+    ...new Set(
+      rows.flatMap((row) => [...row.outputAssetIds, ...row.inputAssetIds]),
+    ),
+  ];
+  const previewRows = await loadOutputAssetPreviews(assetIds);
+  const previews = new Map(previewRows.map((asset) => [asset.id, asset]));
+  const idSet = new Set(ids);
+  const root = rows.find(
+    (row) =>
+      row.parentGenerationId === null || !idSet.has(row.parentGenerationId),
+  );
+  const sourceAssetId =
+    root &&
+    (root.type === "edit" ||
+      root.type === "variation" ||
+      root.type === "resize")
+      ? root.inputAssetIds[0]
+      : undefined;
+
+  const revisions = rows
+    .flatMap((row) => {
+      const asset = row.outputAssetIds
+        .map((id) => previews.get(id))
+        .find((item): item is OutputAssetPreview => Boolean(item));
+      if (!asset || row.status !== "completed") return [];
+
+      const inputAssetId =
+        row.type === "edit" || row.type === "variation" || row.type === "resize"
+          ? row.inputAssetIds[0]
+          : undefined;
+      return [
+        {
+          generationId: row.id,
+          parentGenerationId: row.parentGenerationId,
+          type: row.type,
+          asset,
+          inputAsset: inputAssetId
+            ? (previews.get(inputAssetId) ?? null)
+            : null,
+          createdAt: row.createdAt.toISOString(),
+          completedAt: row.completedAt?.toISOString() ?? null,
+        },
+      ];
+    })
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+
+  return {
+    currentGenerationId: generationId,
+    sourceAsset: sourceAssetId ? (previews.get(sourceAssetId) ?? null) : null,
+    revisions,
+  };
+}
+
 export async function retryProjectGeneration(
   actorUserId: string,
   workspaceId: string,

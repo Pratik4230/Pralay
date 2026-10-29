@@ -8,6 +8,12 @@ export function getMediaUrl(key: string | null | undefined) {
   return `${env.appUrl}/api/v1/media?key=${encodeURIComponent(key)}`;
 }
 
+export function getMediaDownloadUrl(key: string | null | undefined) {
+  const mediaUrl = getMediaUrl(key);
+  if (!mediaUrl) return null;
+  return `${mediaUrl}&download=1`;
+}
+
 /** Best-effort reverse of {@link getMediaUrl} for attachment URLs after send. */
 export function parseMediaKeyFromUrl(url: string): string | null {
   try {

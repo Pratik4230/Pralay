@@ -124,6 +124,22 @@ export const getProjectGenerationResponseSchema = z.object({
   generation: generationSchema,
 });
 
+export const generationHistoryRevisionSchema = z.object({
+  generationId: z.uuid(),
+  parentGenerationId: z.uuid().nullable(),
+  type: generationTypeSchema,
+  asset: generationOutputAssetPreviewSchema,
+  inputAsset: generationOutputAssetPreviewSchema.nullable(),
+  createdAt: z.iso.datetime(),
+  completedAt: z.iso.datetime().nullable(),
+});
+
+export const getProjectGenerationHistoryResponseSchema = z.object({
+  currentGenerationId: z.uuid(),
+  sourceAsset: generationOutputAssetPreviewSchema.nullable(),
+  revisions: z.array(generationHistoryRevisionSchema),
+});
+
 export const retryProjectGenerationResponseSchema = z.object({
   generation: generationSchema,
 });
@@ -144,6 +160,12 @@ export const generationNotRetryableError = createApiError(
 );
 
 export type Generation = z.infer<typeof generationSchema>;
+export type GenerationHistoryRevision = z.infer<
+  typeof generationHistoryRevisionSchema
+>;
+export type ProjectGenerationHistory = z.infer<
+  typeof getProjectGenerationHistoryResponseSchema
+>;
 export type CreateProjectGenerationBody = z.infer<
   typeof createProjectGenerationBodySchema
 >;

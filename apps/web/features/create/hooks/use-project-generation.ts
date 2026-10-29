@@ -6,6 +6,7 @@ import type { Generation } from "@repo/validators";
 
 import { CREATE_GENERATION_POLL_MS } from "@/features/create/constants/create-timing";
 import {
+  fetchProjectGenerationHistory,
   fetchProjectGeneration,
   retryProjectGeneration,
 } from "@/features/create/utils/fetch-project-generation";
@@ -62,5 +63,29 @@ export function useProjectGeneration(
       return CREATE_GENERATION_POLL_MS;
     },
     refetchIntervalInBackground: true,
+  });
+}
+
+export function useProjectGenerationHistory(
+  workspaceId: string,
+  projectId: string,
+  generationId: string | null | undefined,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: createKeys.generationHistory(
+      workspaceId,
+      projectId,
+      generationId ?? "none",
+    ),
+    queryFn: () =>
+      fetchProjectGenerationHistory(workspaceId, projectId, generationId!),
+    enabled:
+      enabled &&
+      Boolean(workspaceId) &&
+      Boolean(projectId) &&
+      Boolean(generationId),
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 }

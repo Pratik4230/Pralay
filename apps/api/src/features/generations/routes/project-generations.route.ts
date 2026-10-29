@@ -6,6 +6,7 @@ import {
   createProjectGenerationBodySchema,
   createProjectGenerationResponseSchema,
   generationNotFoundError,
+  getProjectGenerationHistoryResponseSchema,
   getProjectGenerationResponseSchema,
   invalidGenerationInputAssetsError,
   projectNotFoundError,
@@ -75,6 +76,34 @@ export const getProjectGenerationRoute = createRoute({
       description: "Generation",
       content: {
         "application/json": { schema: getProjectGenerationResponseSchema },
+      },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+    404: {
+      description: "Not found",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+  },
+});
+
+export const getProjectGenerationHistoryRoute = createRoute({
+  method: "get",
+  path: "/api/v1/workspaces/{id}/projects/{projectId}/generations/{generationId}/history",
+  tags: ["Generations"],
+  summary: "Get image revision history",
+  description:
+    "Returns the immutable image revision lineage containing the selected generation.",
+  request: { params: generationParams },
+  responses: {
+    200: {
+      description: "Image revision history",
+      content: {
+        "application/json": {
+          schema: getProjectGenerationHistoryResponseSchema,
+        },
       },
     },
     401: {

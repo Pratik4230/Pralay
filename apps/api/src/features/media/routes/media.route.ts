@@ -13,6 +13,7 @@ export const getMediaRoute = createRoute({
   request: {
     query: z.object({
       key: z.string().min(1).max(512),
+      download: z.literal("1").optional(),
     }),
   },
   responses: {
