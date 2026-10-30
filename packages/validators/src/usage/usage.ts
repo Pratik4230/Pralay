@@ -8,6 +8,21 @@ export const updateWorkspaceUsageBudgetBodySchema = z.object({
   lowCreditThreshold: z.number().int().min(0).max(1_000_000),
 });
 
+export const updateProjectAiBudgetBodySchema = z.object({
+  monthlyLimit: z.number().int().min(0).max(10_000_000).nullable(),
+});
+
+export const adjustWorkspaceCreditsBodySchema = z.object({
+  idempotencyKey: z.uuid(),
+  creditsDelta: z
+    .number()
+    .int()
+    .min(-1_000_000)
+    .max(1_000_000)
+    .refine((value) => value !== 0),
+  reason: z.string().trim().min(3).max(200),
+});
+
 const usageTotalsSchema = z.object({
   operations: z.number().int().nonnegative(),
   failedOperations: z.number().int().nonnegative(),
@@ -56,6 +71,10 @@ export const workspaceUsageSummaryResponseSchema = z.object({
       projectName: z.string(),
       operations: z.number().int().nonnegative(),
       creditsUsed: z.number().int().nonnegative(),
+      monthlyLimit: z.number().int().nonnegative().nullable(),
+      monthlyUsed: z.number().int().nonnegative(),
+      reserved: z.number().int().nonnegative(),
+      monthlyAvailable: z.number().int().nonnegative().nullable(),
     }),
   ),
   daily: z.array(
@@ -87,6 +106,7 @@ export const workspaceUsageSummaryResponseSchema = z.object({
       creditsDelta: z.number().int(),
       balanceAfter: z.number().int().nullable(),
       reason: z.string(),
+      metadata: z.record(z.string(), z.unknown()),
       createdAt: z.iso.datetime(),
     }),
   ),
@@ -94,6 +114,40 @@ export const workspaceUsageSummaryResponseSchema = z.object({
 
 export const workspaceUsageBudgetResponseSchema = z.object({
   lowCreditThreshold: z.number().int().nonnegative(),
+});
+
+export const projectAiBudgetResponseSchema = z.object({
+  projectId: z.uuid(),
+  monthlyLimit: z.number().int().nonnegative().nullable(),
+  monthlyUsed: z.number().int().nonnegative(),
+  reserved: z.number().int().nonnegative(),
+  monthlyAvailable: z.number().int().nonnegative().nullable(),
+});
+
+export const workspaceCreditAdjustmentResponseSchema = z.object({
+  duplicate: z.boolean(),
+  balance: z.number().int(),
+  available: z.number().int().nonnegative(),
+});
+
+export const notificationSchema = z.object({
+  id: z.uuid(),
+  workspaceId: z.uuid().nullable(),
+  type: z.string(),
+  title: z.string(),
+  body: z.string(),
+  readAt: z.iso.datetime().nullable(),
+  metadata: z.record(z.string(), z.unknown()),
+  createdAt: z.iso.datetime(),
+});
+
+export const notificationListResponseSchema = z.object({
+  unreadCount: z.number().int().nonnegative(),
+  notifications: z.array(notificationSchema),
+});
+
+export const notificationMutationResponseSchema = z.object({
+  ok: z.literal(true),
 });
 
 export type WorkspaceUsageSummary = z.infer<

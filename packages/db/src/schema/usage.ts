@@ -101,6 +101,28 @@ export const workspaceCredits = pgTable("workspace_credits", {
     .notNull(),
 });
 
+export const projectAiBudgets = pgTable(
+  "project_ai_budgets",
+  {
+    projectId: uuid("project_id")
+      .primaryKey()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    monthlyLimit: integer("monthly_limit"),
+    periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
+    periodUsed: integer("period_used").notNull().default(0),
+    reservedCredits: integer("reserved_credits").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("project_ai_budgets_workspace_id_idx").on(table.workspaceId),
+  ],
+);
+
 export const aiCreditReservations = pgTable(
   "ai_credit_reservations",
   {
@@ -161,6 +183,10 @@ export const usageLedger = pgTable(
     creditsDelta: integer("credits_delta").notNull(),
     balanceAfter: integer("balance_after"),
     reason: text("reason").notNull(),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

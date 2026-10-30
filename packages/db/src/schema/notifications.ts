@@ -1,4 +1,12 @@
-import { index, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import {
+  index,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
 
 import { notificationTypeEnum } from "./enums.js";
 import { workspaces } from "./workspaces.js";
@@ -8,6 +16,7 @@ export const notifications = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     userId: text("user_id").notNull(),
+    dedupeKey: text("dedupe_key"),
     workspaceId: uuid("workspace_id").references(() => workspaces.id, {
       onDelete: "cascade",
     }),
@@ -23,5 +32,6 @@ export const notifications = pgTable(
   (table) => [
     index("notifications_user_id_idx").on(table.userId),
     index("notifications_workspace_id_idx").on(table.workspaceId),
+    uniqueIndex("notifications_dedupe_key_unique").on(table.dedupeKey),
   ],
 );

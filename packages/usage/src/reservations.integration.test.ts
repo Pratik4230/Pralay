@@ -7,12 +7,17 @@ import { db } from "@repo/db";
 import {
   aiCreditReservations,
   aiUsageEvents,
+  projectAiBudgets,
+  projects,
   usageLedger,
   workspaceCredits,
   workspaces,
 } from "@repo/db/schema";
 
-import { InsufficientCreditsError } from "./errors.js";
+import {
+  InsufficientCreditsError,
+  ProjectBudgetExceededError,
+} from "./errors.js";
 import { recordAiUsage } from "./record-usage.js";
 import { reserveAiCredits } from "./reservations.js";
 
@@ -130,13 +135,97 @@ describe.skipIf(!hasDatabaseUrl)("AI credit reservations", () => {
       }),
     ]);
 
-    expect(attempts.filter((result) => result.status === "fulfilled")).toHaveLength(1);
-    expect(attempts.filter((result) => result.status === "rejected")).toHaveLength(1);
+    expect(
+      attempts.filter((result) => result.status === "fulfilled"),
+    ).toHaveLength(1);
+    expect(
+      attempts.filter((result) => result.status === "rejected"),
+    ).toHaveLength(1);
     const [account] = await db
       .select()
       .from(workspaceCredits)
       .where(eq(workspaceCredits.workspaceId, workspace!.id));
     expect(account?.reservedCredits).toBe(4);
     expect(account!.balance - account!.reservedCredits).toBe(1);
+  });
+
+  test("enforces and settles a project monthly budget under concurrency", async () => {
+    const suffix = randomUUID();
+    const [workspace] = await db
+      .insert(workspaces)
+      .values({ name: "Project budget test", slug: `project-budget-${suffix}` })
+      .returning({ id: workspaces.id });
+    createdWorkspaceIds.push(workspace!.id);
+    const [project] = await db
+      .insert(projects)
+      .values({
+        workspaceId: workspace!.id,
+        name: "Budgeted project",
+        slug: `budgeted-${suffix}`,
+        createdBy: `test-user-${suffix}`,
+      })
+      .returning({ id: projects.id });
+    await db.insert(workspaceCredits).values({
+      workspaceId: workspace!.id,
+      balance: 100,
+    });
+    await db.insert(projectAiBudgets).values({
+      projectId: project!.id,
+      workspaceId: workspace!.id,
+      monthlyLimit: 5,
+      periodStart: new Date(
+        Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1),
+      ),
+    });
+
+    const attempts = await Promise.allSettled([
+      reserveAiCredits({
+        idempotencyKey: `project-race-a:${suffix}`,
+        workspaceId: workspace!.id,
+        projectId: project!.id,
+        operation: "text.chat",
+        credits: 4,
+      }),
+      reserveAiCredits({
+        idempotencyKey: `project-race-b:${suffix}`,
+        workspaceId: workspace!.id,
+        projectId: project!.id,
+        operation: "text.chat",
+        credits: 4,
+      }),
+    ]);
+
+    expect(
+      attempts.filter((result) => result.status === "fulfilled"),
+    ).toHaveLength(1);
+    const rejected = attempts.find((result) => result.status === "rejected");
+    expect(
+      rejected?.status === "rejected" ? rejected.reason : null,
+    ).toBeInstanceOf(ProjectBudgetExceededError);
+
+    const activeReservation = await db
+      .select()
+      .from(aiCreditReservations)
+      .where(eq(aiCreditReservations.projectId, project!.id));
+    expect(activeReservation).toHaveLength(1);
+    await recordAiUsage({
+      idempotencyKey: `project-usage:${suffix}`,
+      reservationKey: activeReservation[0]!.idempotencyKey,
+      workspaceId: workspace!.id,
+      projectId: project!.id,
+      operation: "text.chat",
+      modality: "text",
+      provider: "test",
+      model: "test-model",
+      inputTokens: 2_000,
+      outputTokens: 10,
+      startedAt: new Date(),
+    });
+
+    const [budget] = await db
+      .select()
+      .from(projectAiBudgets)
+      .where(eq(projectAiBudgets.projectId, project!.id));
+    expect(budget).toMatchObject({ periodUsed: 3, reservedCredits: 0 });
   });
 });

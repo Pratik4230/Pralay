@@ -8,6 +8,7 @@ import {
   type AiUsageModality,
   type AiUsageStatus,
   usageLedger,
+  projectAiBudgets,
   workspaceCredits,
 } from "@repo/db/schema";
 
@@ -159,7 +160,8 @@ export async function recordAiUsage(input: RecordAiUsageInput) {
         throw new InsufficientCreditsError(
           Math.max(
             0,
-            (current?.balance ?? 0) - (current?.reservedCredits ?? 0) +
+            (current?.balance ?? 0) -
+              (current?.reservedCredits ?? 0) +
               reservedCredits,
           ),
           credits,
@@ -167,6 +169,16 @@ export async function recordAiUsage(input: RecordAiUsageInput) {
       }
 
       if (reservation?.status === "active") {
+        if (reservation.projectId) {
+          await tx
+            .update(projectAiBudgets)
+            .set({
+              periodUsed: sql`${projectAiBudgets.periodUsed} + ${credits}`,
+              reservedCredits: sql`greatest(0, ${projectAiBudgets.reservedCredits} - ${reservedCredits})`,
+              updatedAt: completedAt,
+            })
+            .where(eq(projectAiBudgets.projectId, reservation.projectId));
+        }
         await tx
           .update(aiCreditReservations)
           .set({
@@ -175,6 +187,16 @@ export async function recordAiUsage(input: RecordAiUsageInput) {
             updatedAt: completedAt,
           })
           .where(eq(aiCreditReservations.id, reservation.id));
+      }
+
+      if (!reservation && input.projectId) {
+        await tx
+          .update(projectAiBudgets)
+          .set({
+            periodUsed: sql`${projectAiBudgets.periodUsed} + ${credits}`,
+            updatedAt: completedAt,
+          })
+          .where(eq(projectAiBudgets.projectId, input.projectId));
       }
 
       await tx
@@ -198,6 +220,15 @@ export async function recordAiUsage(input: RecordAiUsageInput) {
           updatedAt: completedAt,
         })
         .where(eq(workspaceCredits.workspaceId, input.workspaceId));
+      if (reservation.projectId) {
+        await tx
+          .update(projectAiBudgets)
+          .set({
+            reservedCredits: sql`greatest(0, ${projectAiBudgets.reservedCredits} - ${reservation.credits})`,
+            updatedAt: completedAt,
+          })
+          .where(eq(projectAiBudgets.projectId, reservation.projectId));
+      }
       await tx
         .update(aiCreditReservations)
         .set({

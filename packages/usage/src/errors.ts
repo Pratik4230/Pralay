@@ -11,3 +11,17 @@ export class InsufficientCreditsError extends Error {
     this.name = "InsufficientCreditsError";
   }
 }
+
+export class ProjectBudgetExceededError extends Error {
+  readonly code = "project_budget_exceeded";
+
+  constructor(
+    public readonly available: number,
+    public readonly required: number,
+  ) {
+    super(
+      `This project needs ${required.toLocaleString()} available monthly credits but has ${available.toLocaleString()}.`,
+    );
+    this.name = "ProjectBudgetExceededError";
+  }
+}

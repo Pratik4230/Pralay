@@ -104,6 +104,8 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "generation_failed",
   "workspace_invite",
   "system",
+  "ai_budget",
+  "ai_anomaly",
 ]);
 
 export const assistantMessageRoleEnum = pgEnum("assistant_message_role", [

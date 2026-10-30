@@ -15,7 +15,10 @@ import {
 } from "@repo/validators";
 
 import type { AuthVariables } from "../../../global/middleware/session.js";
-import { InsufficientCreditsError } from "@repo/usage";
+import {
+  InsufficientCreditsError,
+  ProjectBudgetExceededError,
+} from "@repo/usage";
 import { WorkspaceAccessError } from "../../workspace/services/workspace-access.service.js";
 import {
   createProjectGeneration,
@@ -40,6 +43,16 @@ function insufficientCreditsError(error: InsufficientCreditsError) {
   return {
     error: {
       code: "INSUFFICIENT_CREDITS" as const,
+      message: error.message,
+      details: { available: error.available, required: error.required },
+    },
+  };
+}
+
+function projectBudgetExceededError(error: ProjectBudgetExceededError) {
+  return {
+    error: {
+      code: "PROJECT_BUDGET_EXCEEDED" as const,
       message: error.message,
       details: { available: error.available, required: error.required },
     },
@@ -103,6 +116,9 @@ export async function createProjectGenerationController(
     }
     if (error instanceof InsufficientCreditsError) {
       return c.json(insufficientCreditsError(error), 402);
+    }
+    if (error instanceof ProjectBudgetExceededError) {
+      return c.json(projectBudgetExceededError(error), 402);
     }
     throw error;
   }
@@ -219,6 +235,9 @@ export async function retryProjectGenerationController(
     }
     if (error instanceof InsufficientCreditsError) {
       return c.json(insufficientCreditsError(error), 402);
+    }
+    if (error instanceof ProjectBudgetExceededError) {
+      return c.json(projectBudgetExceededError(error), 402);
     }
     throw error;
   }

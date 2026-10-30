@@ -31,6 +31,11 @@ import { useSignOut } from "@/features/auth/hooks/use-sign-out";
 import { isProjectRoute } from "@/features/workspace/utils/project-nav";
 import { isWorkspaceRoute } from "@/features/workspace/utils/workspace-nav";
 import { getMediaUrl } from "@/global/utils/media-url";
+import {
+  useMarkAllNotificationsRead,
+  useMarkNotificationRead,
+  useNotifications,
+} from "@/global/hooks/use-notifications";
 
 type AppNavbarProps = {
   userName: string;
@@ -53,6 +58,9 @@ export function AppNavbar({
 }: AppNavbarProps) {
   const pathname = usePathname();
   const signOut = useSignOut();
+  const notifications = useNotifications();
+  const markNotificationRead = useMarkNotificationRead();
+  const markAllNotificationsRead = useMarkAllNotificationsRead();
   const avatarUrl = getMediaUrl(userAvatarKey);
   const inProject = isProjectRoute(pathname);
   const inWorkspace = !inProject && isWorkspaceRoute(pathname);
@@ -90,16 +98,94 @@ export function AppNavbar({
       {/* Right actions */}
       <div className="flex shrink-0 items-center gap-1">
         {/* Notification bell */}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Notifications"
-          className="relative"
-        >
-          <BellIcon className="size-4" />
-          {/* Unread dot — placeholder */}
-          {/* <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-primary" /> */}
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={`Notifications${notifications.data?.unreadCount ? `, ${notifications.data.unreadCount} unread` : ""}`}
+              className="relative"
+            >
+              <BellIcon className="size-4" />
+              {notifications.data?.unreadCount ? (
+                <span className="absolute right-0.5 top-0.5 flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-semibold leading-4 text-destructive-foreground">
+                  {notifications.data.unreadCount > 99
+                    ? "99+"
+                    : notifications.data.unreadCount}
+                </span>
+              ) : null}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
+            className="w-96 max-w-[calc(100vw-2rem)]"
+          >
+            <DropdownMenuLabel className="flex items-center justify-between gap-3">
+              <span>Notifications</span>
+              {notifications.data?.unreadCount ? (
+                <button
+                  type="button"
+                  className="text-xs font-normal text-primary hover:underline"
+                  onClick={() => markAllNotificationsRead.mutate()}
+                  disabled={markAllNotificationsRead.isPending}
+                >
+                  Mark all read
+                </button>
+              ) : null}
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <div className="max-h-96 overflow-y-auto">
+              {notifications.isLoading ? (
+                <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+                  Loading notifications...
+                </p>
+              ) : notifications.data?.notifications.length ? (
+                notifications.data.notifications.map((notification) => {
+                  const href =
+                    typeof notification.metadata.href === "string"
+                      ? notification.metadata.href
+                      : "/dashboard";
+                  return (
+                    <DropdownMenuItem
+                      key={notification.id}
+                      asChild
+                      className="items-start p-0"
+                    >
+                      <Link
+                        href={href}
+                        className="flex w-full gap-3 px-3 py-3"
+                        onClick={() => {
+                          if (!notification.readAt) {
+                            markNotificationRead.mutate(notification.id);
+                          }
+                        }}
+                      >
+                        <span
+                          className={`mt-1.5 size-2 shrink-0 rounded-full ${notification.readAt ? "bg-muted" : "bg-primary"}`}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-medium">
+                            {notification.title}
+                          </span>
+                          <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
+                            {notification.body}
+                          </span>
+                          <span className="mt-1 block text-[10px] text-muted-foreground">
+                            {new Date(notification.createdAt).toLocaleString()}
+                          </span>
+                        </span>
+                      </Link>
+                    </DropdownMenuItem>
+                  );
+                })
+              ) : (
+                <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+                  No notifications yet.
+                </p>
+              )}
+            </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         {/* Theme toggle */}
         <ThemeToggle />

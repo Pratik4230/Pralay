@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import { hasOpenAiApiKey } from "@repo/env";
 import {
   InsufficientCreditsError,
+  ProjectBudgetExceededError,
   recordAiUsage,
   releaseAiCreditReservation,
   reserveAiCredits,
@@ -34,6 +35,8 @@ const MODEL_ERROR_REPLY =
   "I could not generate a reply right now. Please try again in a moment.";
 const INSUFFICIENT_CREDITS_REPLY =
   "This workspace does not have enough AI credits for that request. Ask a workspace admin to review AI usage.";
+const PROJECT_BUDGET_REPLY =
+  "This project has reached its monthly AI budget. Ask a workspace admin to review the project limit.";
 
 const CREATE_CHAT_RESERVATION_CREDITS = 32;
 
@@ -179,6 +182,7 @@ export async function generateCreateAssistantReply(
     if (error instanceof InsufficientCreditsError) {
       return INSUFFICIENT_CREDITS_REPLY;
     }
+    if (error instanceof ProjectBudgetExceededError) return PROJECT_BUDGET_REPLY;
     return MODEL_ERROR_REPLY;
   }
 }
@@ -216,7 +220,9 @@ export async function* streamCreateAssistantReply(
     console.error("[create-assistant] chat stream failed", error);
     yield error instanceof InsufficientCreditsError
       ? INSUFFICIENT_CREDITS_REPLY
-      : MODEL_ERROR_REPLY;
+      : error instanceof ProjectBudgetExceededError
+        ? PROJECT_BUDGET_REPLY
+        : MODEL_ERROR_REPLY;
   }
 }
 

@@ -18,6 +18,7 @@ import { templates } from "./templates.js";
 import {
   aiCreditReservations,
   aiUsageEvents,
+  projectAiBudgets,
   usageLedger,
   workspaceCredits,
 } from "./usage.js";
@@ -308,6 +309,20 @@ export const aiCreditReservationsRelations = relations(
     usageEvent: one(aiUsageEvents, {
       fields: [aiCreditReservations.usageEventId],
       references: [aiUsageEvents.id],
+    }),
+  }),
+);
+
+export const projectAiBudgetsRelations = relations(
+  projectAiBudgets,
+  ({ one }) => ({
+    workspace: one(workspaces, {
+      fields: [projectAiBudgets.workspaceId],
+      references: [workspaces.id],
+    }),
+    project: one(projects, {
+      fields: [projectAiBudgets.projectId],
+      references: [projects.id],
     }),
   }),
 );

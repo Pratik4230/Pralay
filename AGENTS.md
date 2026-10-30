@@ -216,7 +216,7 @@ packages/ai (providers) · packages/agents (LangGraph graphs + tools) — planne
 | Postgres LangGraph checkpointer                 | ✅     | Separate tables managed by `PostgresSaver.setup()`                          |
 | Image revision history + downloads             | ✅     | Immutable lineage rail, compare, reuse older sources, authenticated download |
 | Generic AI observability + usage accounting    | ✅     | Provider-neutral events and idempotent credits for text, image, tools, and future modalities |
-| AI usage dashboard + budget enforcement        | ✅     | Workspace diagnostics, low-credit alerts, atomic reservations, hard pre-provider credit checks |
+| AI usage dashboard + budget enforcement        | ✅     | Workspace and project limits, atomic reservations, owner adjustments, durable alerts, and notifications |
 | Brand kit / templates                           | ⬜     | Deferred                                                                    |
 
 ---
@@ -330,7 +330,7 @@ See `.env.example`. Required for AI slice: `DATABASE_URL`, S3, `OPENAI_API_KEY`,
 7. ~~Edit and resize flows via new turns/tools (not composer scope creep).~~ Done. Uploaded and generated images support AI edits and deterministic resize. Source assets and parent generations are persisted.
 8. ~~Image revision history and downloads.~~ Done. The editor exposes immutable lineage, before/after comparison, older revision reuse, and authenticated image downloads.
 9. ~~Generic AI observability and usage accounting.~~ Done. `@repo/usage` records provider-neutral operations and retry-safe credit debits across text, image, tools, and future modalities.
-10. ~~AI usage dashboard and budget enforcement.~~ Done. Workspace usage is broken down by modality, model, project, and day. Provider calls reserve credits atomically and are rejected before execution when the available balance is insufficient.
+10. ~~AI usage dashboard, budget enforcement, alerts, and credit administration.~~ Done. Workspace and project budgets reserve atomically, owner adjustments are audited and idempotent, and durable monitors deliver deduplicated in-app and email alerts.
 
 ---
 
@@ -360,4 +360,4 @@ Historical operations predating metering are backfilled for observability with z
 | Create UX (frontend)   | ~65%     |
 | AI backend (Create)    | ~55%     |
 
-**Current focus:** Production hardening for AI budgets, alerts, and operational diagnostics.
+**Current focus:** Production hardening for image workflows, then brand kits and templates.

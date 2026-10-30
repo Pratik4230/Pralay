@@ -1,9 +1,16 @@
-import { and, eq, gt, lte, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, lt, lte, sql } from "drizzle-orm";
 
 import { db } from "@repo/db";
-import { aiCreditReservations, workspaceCredits } from "@repo/db/schema";
+import {
+  aiCreditReservations,
+  projectAiBudgets,
+  workspaceCredits,
+} from "@repo/db/schema";
 
-import { InsufficientCreditsError } from "./errors.js";
+import {
+  InsufficientCreditsError,
+  ProjectBudgetExceededError,
+} from "./errors.js";
 
 const DEFAULT_RESERVATION_TTL_MS = 2 * 60 * 60 * 1_000;
 
@@ -23,7 +30,11 @@ async function releaseExpiredReservations(
   now: Date,
 ) {
   const expired = await tx
-    .select({ id: aiCreditReservations.id, credits: aiCreditReservations.credits })
+    .select({
+      id: aiCreditReservations.id,
+      credits: aiCreditReservations.credits,
+      projectId: aiCreditReservations.projectId,
+    })
     .from(aiCreditReservations)
     .where(
       and(
@@ -35,15 +46,25 @@ async function releaseExpiredReservations(
     .for("update");
   if (expired.length === 0) return;
 
-  const released = expired.reduce((sum, item) => sum + item.credits, 0);
+  await releaseReservationRows(tx, workspaceId, expired, now);
+}
+
+async function releaseReservationRows(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  workspaceId: string,
+  rows: Array<{ id: string; credits: number; projectId: string | null }>,
+  now: Date,
+) {
+  if (rows.length === 0) return;
+
+  const released = rows.reduce((sum, item) => sum + item.credits, 0);
   await tx
     .update(aiCreditReservations)
     .set({ status: "released", updatedAt: now })
     .where(
-      and(
-        eq(aiCreditReservations.workspaceId, workspaceId),
-        eq(aiCreditReservations.status, "active"),
-        lte(aiCreditReservations.expiresAt, now),
+      inArray(
+        aiCreditReservations.id,
+        rows.map((item) => item.id),
       ),
     );
   await tx
@@ -53,13 +74,97 @@ async function releaseExpiredReservations(
       updatedAt: now,
     })
     .where(eq(workspaceCredits.workspaceId, workspaceId));
+
+  const projectReleases = new Map<string, number>();
+  for (const row of rows) {
+    if (!row.projectId) continue;
+    projectReleases.set(
+      row.projectId,
+      (projectReleases.get(row.projectId) ?? 0) + row.credits,
+    );
+  }
+  for (const [projectId, projectCredits] of projectReleases) {
+    await tx
+      .update(projectAiBudgets)
+      .set({
+        reservedCredits: sql`greatest(0, ${projectAiBudgets.reservedCredits} - ${projectCredits})`,
+        updatedAt: now,
+      })
+      .where(eq(projectAiBudgets.projectId, projectId));
+  }
+}
+
+function startOfUtcMonth(date: Date) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+}
+
+async function reserveProjectBudget(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  projectId: string,
+  workspaceId: string,
+  credits: number,
+  now: Date,
+) {
+  const periodStart = startOfUtcMonth(now);
+  await tx
+    .update(projectAiBudgets)
+    .set({
+      periodStart,
+      periodUsed: 0,
+      reservedCredits: 0,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(projectAiBudgets.projectId, projectId),
+        eq(projectAiBudgets.workspaceId, workspaceId),
+        lt(projectAiBudgets.periodStart, periodStart),
+      ),
+    );
+
+  const [budget] = await tx
+    .select()
+    .from(projectAiBudgets)
+    .where(
+      and(
+        eq(projectAiBudgets.projectId, projectId),
+        eq(projectAiBudgets.workspaceId, workspaceId),
+      ),
+    )
+    .limit(1)
+    .for("update");
+  if (!budget || budget.monthlyLimit === null) return;
+
+  const [updated] = await tx
+    .update(projectAiBudgets)
+    .set({
+      reservedCredits: sql`${projectAiBudgets.reservedCredits} + ${credits}`,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(projectAiBudgets.projectId, projectId),
+        sql`${projectAiBudgets.monthlyLimit} - ${projectAiBudgets.periodUsed} - ${projectAiBudgets.reservedCredits} >= ${credits}`,
+      ),
+    )
+    .returning({ projectId: projectAiBudgets.projectId });
+  if (!updated) {
+    throw new ProjectBudgetExceededError(
+      Math.max(
+        0,
+        budget.monthlyLimit - budget.periodUsed - budget.reservedCredits,
+      ),
+      credits,
+    );
+  }
 }
 
 export async function reserveAiCredits(input: ReserveAiCreditsInput) {
   const credits = Math.max(0, Math.ceil(input.credits));
   if (credits === 0) return { duplicate: false, reservation: null };
   const now = new Date();
-  const expiresAt = input.expiresAt ?? new Date(now.getTime() + DEFAULT_RESERVATION_TTL_MS);
+  const expiresAt =
+    input.expiresAt ?? new Date(now.getTime() + DEFAULT_RESERVATION_TTL_MS);
 
   return db.transaction(async (tx) => {
     await tx
@@ -107,6 +212,16 @@ export async function reserveAiCredits(input: ReserveAiCreditsInput) {
       throw new InsufficientCreditsError(
         Math.max(0, (current?.balance ?? 0) - (current?.reservedCredits ?? 0)),
         credits,
+      );
+    }
+
+    if (input.projectId) {
+      await reserveProjectBudget(
+        tx,
+        input.projectId,
+        input.workspaceId,
+        credits,
+        now,
       );
     }
 
@@ -161,11 +276,56 @@ export async function releaseAiCreditReservation(idempotencyKey: string) {
           gt(workspaceCredits.reservedCredits, 0),
         ),
       );
+    if (reservation.projectId) {
+      await tx
+        .update(projectAiBudgets)
+        .set({
+          reservedCredits: sql`greatest(0, ${projectAiBudgets.reservedCredits} - ${reservation.credits})`,
+          updatedAt: new Date(),
+        })
+        .where(eq(projectAiBudgets.projectId, reservation.projectId));
+    }
     await tx
       .update(aiCreditReservations)
       .set({ status: "released", updatedAt: new Date() })
       .where(eq(aiCreditReservations.id, reservation.id));
     return true;
+  });
+}
+
+export async function releaseExpiredAiCreditReservations(limit = 500) {
+  const now = new Date();
+  return db.transaction(async (tx) => {
+    const expired = await tx
+      .select({
+        id: aiCreditReservations.id,
+        workspaceId: aiCreditReservations.workspaceId,
+        projectId: aiCreditReservations.projectId,
+        credits: aiCreditReservations.credits,
+      })
+      .from(aiCreditReservations)
+      .where(
+        and(
+          eq(aiCreditReservations.status, "active"),
+          lte(aiCreditReservations.expiresAt, now),
+        ),
+      )
+      .limit(Math.max(1, Math.min(2_000, limit)))
+      .for("update", { skipLocked: true });
+
+    const byWorkspace = new Map<
+      string,
+      Array<{ id: string; credits: number; projectId: string | null }>
+    >();
+    for (const row of expired) {
+      const rows = byWorkspace.get(row.workspaceId) ?? [];
+      rows.push(row);
+      byWorkspace.set(row.workspaceId, rows);
+    }
+    for (const [workspaceId, rows] of byWorkspace) {
+      await releaseReservationRows(tx, workspaceId, rows, now);
+    }
+    return { released: expired.length };
   });
 }
 

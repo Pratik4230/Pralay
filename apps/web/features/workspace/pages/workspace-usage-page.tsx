@@ -24,6 +24,8 @@ import { Input } from "@repo/ui/components/input";
 import { WorkspaceSectionShell } from "@/features/workspace/components/workspace-section-shell";
 import {
   useUpdateWorkspaceUsageBudget,
+  useUpdateProjectAiBudget,
+  useAdjustWorkspaceCredits,
   useWorkspaceUsage,
 } from "@/features/workspace/hooks/use-workspace-usage";
 import { useWorkspace } from "@/features/workspace/hooks/use-workspaces";
@@ -36,7 +38,9 @@ function formatNumber(value: number) {
 }
 
 function formatOperation(value: string) {
-  return value.replaceAll(".", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return value
+    .replaceAll(".", " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function MetricCard({
@@ -71,7 +75,12 @@ function BreakdownList({
   items,
 }: {
   title: string;
-  items: Array<{ key: string; label: string; operations: number; credits: number }>;
+  items: Array<{
+    key: string;
+    label: string;
+    operations: number;
+    credits: number;
+  }>;
 }) {
   const max = Math.max(1, ...items.map((item) => item.credits));
   return (
@@ -81,7 +90,9 @@ function BreakdownList({
       </CardHeader>
       <CardContent className="space-y-4">
         {items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No usage in this period.</p>
+          <p className="text-sm text-muted-foreground">
+            No usage in this period.
+          </p>
         ) : (
           items.slice(0, 6).map((item) => (
             <div key={item.key}>
@@ -94,7 +105,9 @@ function BreakdownList({
               <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
                 <div
                   className="h-full rounded-full bg-primary"
-                  style={{ width: `${Math.max(3, (item.credits / max) * 100)}%` }}
+                  style={{
+                    width: `${Math.max(3, (item.credits / max) * 100)}%`,
+                  }}
                 />
               </div>
               <p className="mt-1 text-[11px] text-muted-foreground">
@@ -113,17 +126,38 @@ export function WorkspaceUsagePage({ workspaceId }: { workspaceId: string }) {
   const usage = useWorkspaceUsage(workspaceId, days);
   const workspace = useWorkspace(workspaceId);
   const updateBudget = useUpdateWorkspaceUsageBudget(workspaceId);
+  const updateProjectBudget = useUpdateProjectAiBudget(workspaceId);
+  const adjustCredits = useAdjustWorkspaceCredits(workspaceId);
   const [threshold, setThreshold] = useState("500");
+  const [projectLimits, setProjectLimits] = useState<Record<string, string>>(
+    {},
+  );
+  const [creditDelta, setCreditDelta] = useState("");
+  const [adjustmentReason, setAdjustmentReason] = useState("");
 
   useEffect(() => {
     if (usage.data) setThreshold(String(usage.data.credits.lowCreditThreshold));
   }, [usage.data]);
 
+  useEffect(() => {
+    if (!usage.data) return;
+    setProjectLimits(
+      Object.fromEntries(
+        usage.data.byProject.map((project) => [
+          project.projectId ?? "workspace",
+          project.monthlyLimit === null ? "" : String(project.monthlyLimit),
+        ]),
+      ),
+    );
+  }, [usage.data]);
+
   const canManage = workspace.data
     ? canManageWorkspace(workspace.data.membership.role)
     : false;
+  const isOwner = workspace.data?.membership.role === "owner";
   const maxDailyCredits = useMemo(
-    () => Math.max(1, ...(usage.data?.daily.map((item) => item.creditsUsed) ?? [])),
+    () =>
+      Math.max(1, ...(usage.data?.daily.map((item) => item.creditsUsed) ?? [])),
     [usage.data],
   );
 
@@ -147,7 +181,9 @@ export function WorkspaceUsagePage({ workspaceId }: { workspaceId: string }) {
   const data = usage.data;
   const failureRate =
     data.totals.operations > 0
-      ? Math.round((data.totals.failedOperations / data.totals.operations) * 100)
+      ? Math.round(
+          (data.totals.failedOperations / data.totals.operations) * 100,
+        )
       : 0;
 
   return (
@@ -176,7 +212,8 @@ export function WorkspaceUsagePage({ workspaceId }: { workspaceId: string }) {
           <div>
             <p className="font-semibold">AI credits are running low</p>
             <p className="mt-1 text-muted-foreground">
-              New provider operations are blocked automatically when available credits are insufficient.
+              New provider operations are blocked automatically when available
+              credits are insufficient.
             </p>
           </div>
         </div>
@@ -212,19 +249,30 @@ export function WorkspaceUsagePage({ workspaceId }: { workspaceId: string }) {
       <Card className="border-border/60 shadow-sm">
         <CardHeader>
           <CardTitle className="text-base">Daily credit usage</CardTitle>
-          <CardDescription>Successful billable operations during the selected period.</CardDescription>
+          <CardDescription>
+            Successful billable operations during the selected period.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {data.daily.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No billable usage in this period.</p>
+            <p className="text-sm text-muted-foreground">
+              No billable usage in this period.
+            </p>
           ) : (
             <div className="flex h-44 items-end gap-2 overflow-x-auto border-b border-border/60 pb-2">
               {data.daily.map((item) => (
-                <div key={item.date} className="flex min-w-10 flex-1 flex-col items-center gap-2">
-                  <span className="text-[10px] text-muted-foreground">{item.creditsUsed}</span>
+                <div
+                  key={item.date}
+                  className="flex min-w-10 flex-1 flex-col items-center gap-2"
+                >
+                  <span className="text-[10px] text-muted-foreground">
+                    {item.creditsUsed}
+                  </span>
                   <div
                     className="w-full max-w-12 rounded-t bg-primary/80"
-                    style={{ height: `${Math.max(4, (item.creditsUsed / maxDailyCredits) * 112)}px` }}
+                    style={{
+                      height: `${Math.max(4, (item.creditsUsed / maxDailyCredits) * 112)}px`,
+                    }}
                     title={`${item.date}: ${item.creditsUsed} credits`}
                   />
                   <span className="text-[10px] text-muted-foreground">
@@ -236,6 +284,164 @@ export function WorkspaceUsagePage({ workspaceId }: { workspaceId: string }) {
           )}
         </CardContent>
       </Card>
+
+      <Card className="border-border/60 shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-base">Project monthly limits</CardTitle>
+          <CardDescription>
+            Limit each project independently. Leave a value empty for unlimited
+            workspace-level usage.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {data.byProject.map((project) => (
+            <div
+              key={project.projectId}
+              className="flex flex-col gap-3 rounded-lg border border-border/60 p-4 sm:flex-row sm:items-center"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">
+                  {project.projectName}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {project.monthlyUsed.toLocaleString()} used,{" "}
+                  {project.reserved.toLocaleString()} reserved this month
+                </p>
+              </div>
+              <Input
+                className="sm:w-40"
+                type="number"
+                min={0}
+                max={10_000_000}
+                placeholder="Unlimited"
+                value={projectLimits[project.projectId ?? "workspace"] ?? ""}
+                disabled={!canManage || updateProjectBudget.isPending}
+                onChange={(event) =>
+                  setProjectLimits((current) => ({
+                    ...current,
+                    [project.projectId ?? "workspace"]: event.target.value,
+                  }))
+                }
+                aria-label={`${project.projectName} monthly credit limit`}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                disabled={
+                  !canManage ||
+                  !project.projectId ||
+                  updateProjectBudget.isPending
+                }
+                onClick={() => {
+                  if (!project.projectId) return;
+                  const raw = projectLimits[project.projectId] ?? "";
+                  const monthlyLimit = raw === "" ? null : Number(raw);
+                  if (
+                    monthlyLimit !== null &&
+                    (!Number.isInteger(monthlyLimit) ||
+                      monthlyLimit < 0 ||
+                      monthlyLimit > 10_000_000)
+                  ) {
+                    toast.error(
+                      "Enter a monthly limit from 0 to 10,000,000 credits.",
+                    );
+                    return;
+                  }
+                  updateProjectBudget.mutate(
+                    { projectId: project.projectId, monthlyLimit },
+                    {
+                      onSuccess: () =>
+                        toast.success("Project AI budget updated"),
+                      onError: (error) => toast.error(error.message),
+                    },
+                  );
+                }}
+              >
+                Save limit
+              </Button>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      {isOwner ? (
+        <Card className="border-border/60 shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-base">Credit administration</CardTitle>
+            <CardDescription>
+              Apply an owner-authorized grant or deduction. Every adjustment is
+              written to the immutable ledger with its reason.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid max-w-2xl gap-3 sm:grid-cols-[160px_1fr_auto] sm:items-end">
+              <label className="text-sm font-medium">
+                Credit change
+                <Input
+                  className="mt-2"
+                  type="number"
+                  min={-1_000_000}
+                  max={1_000_000}
+                  placeholder="500 or -100"
+                  value={creditDelta}
+                  onChange={(event) => setCreditDelta(event.target.value)}
+                  disabled={adjustCredits.isPending}
+                />
+              </label>
+              <label className="text-sm font-medium">
+                Audit reason
+                <Input
+                  className="mt-2"
+                  maxLength={200}
+                  placeholder="Plan renewal, support correction, promotion"
+                  value={adjustmentReason}
+                  onChange={(event) => setAdjustmentReason(event.target.value)}
+                  disabled={adjustCredits.isPending}
+                />
+              </label>
+              <Button
+                type="button"
+                disabled={adjustCredits.isPending}
+                onClick={() => {
+                  const creditsDelta = Number(creditDelta);
+                  const reason = adjustmentReason.trim();
+                  if (
+                    !Number.isInteger(creditsDelta) ||
+                    creditsDelta === 0 ||
+                    Math.abs(creditsDelta) > 1_000_000
+                  ) {
+                    toast.error("Enter a non-zero whole credit adjustment.");
+                    return;
+                  }
+                  if (reason.length < 3) {
+                    toast.error(
+                      "Add an audit reason with at least 3 characters.",
+                    );
+                    return;
+                  }
+                  adjustCredits.mutate(
+                    {
+                      idempotencyKey: crypto.randomUUID(),
+                      creditsDelta,
+                      reason,
+                    },
+                    {
+                      onSuccess: () => {
+                        toast.success("Credit adjustment recorded");
+                        setCreditDelta("");
+                        setAdjustmentReason("");
+                      },
+                      onError: (error) => toast.error(error.message),
+                    },
+                  );
+                }}
+              >
+                Apply
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-3">
         <BreakdownList
@@ -273,7 +479,8 @@ export function WorkspaceUsagePage({ workspaceId }: { workspaceId: string }) {
             <LockKeyholeIcon className="size-4" /> Budget enforcement
           </CardTitle>
           <CardDescription>
-            Provider calls reserve credits first. Requests that cannot reserve enough credits never reach the provider.
+            Provider calls reserve credits first. Requests that cannot reserve
+            enough credits never reach the provider.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -295,7 +502,11 @@ export function WorkspaceUsagePage({ workspaceId }: { workspaceId: string }) {
               disabled={!canManage || updateBudget.isPending}
               onClick={() => {
                 const value = Number(threshold);
-                if (!Number.isInteger(value) || value < 0 || value > 1_000_000) {
+                if (
+                  !Number.isInteger(value) ||
+                  value < 0 ||
+                  value > 1_000_000
+                ) {
                   toast.error("Enter a threshold from 0 to 1,000,000 credits.");
                   return;
                 }
@@ -322,7 +533,10 @@ export function WorkspaceUsagePage({ workspaceId }: { workspaceId: string }) {
       <Card className="overflow-hidden border-border/60 shadow-sm">
         <CardHeader>
           <CardTitle className="text-base">Recent operations</CardTitle>
-          <CardDescription>Provider-neutral diagnostics for text, images, tools, and future modalities.</CardDescription>
+          <CardDescription>
+            Provider-neutral diagnostics for text, images, tools, and future
+            modalities.
+          </CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto p-0">
           <table className="w-full min-w-[760px] text-left text-sm">
@@ -340,24 +554,38 @@ export function WorkspaceUsagePage({ workspaceId }: { workspaceId: string }) {
               {data.recentEvents.map((event) => (
                 <tr key={event.id} className="hover:bg-muted/20">
                   <td className="px-6 py-3">
-                    <p className="font-medium">{formatOperation(event.operation)}</p>
+                    <p className="font-medium">
+                      {formatOperation(event.operation)}
+                    </p>
                     <p className="text-xs text-muted-foreground">
                       {new Date(event.createdAt).toLocaleString()}
                     </p>
                   </td>
                   <td className="px-4 py-3">
                     <p>{event.model}</p>
-                    <p className="text-xs text-muted-foreground">{event.provider}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {event.provider}
+                    </p>
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">
-                    {formatNumber((event.inputTokens ?? 0) + (event.outputTokens ?? 0))}
+                    {formatNumber(
+                      (event.inputTokens ?? 0) + (event.outputTokens ?? 0),
+                    )}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">
-                    {event.latencyMs === null ? "Not available" : `${event.latencyMs.toLocaleString()} ms`}
+                    {event.latencyMs === null
+                      ? "Not available"
+                      : `${event.latencyMs.toLocaleString()} ms`}
                   </td>
-                  <td className="px-4 py-3 font-medium">{event.creditsCharged}</td>
+                  <td className="px-4 py-3 font-medium">
+                    {event.creditsCharged}
+                  </td>
                   <td className="px-6 py-3">
-                    <Badge variant={event.status === "failed" ? "destructive" : "secondary"}>
+                    <Badge
+                      variant={
+                        event.status === "failed" ? "destructive" : "secondary"
+                      }
+                    >
                       {event.status}
                     </Badge>
                   </td>
@@ -382,13 +610,18 @@ export function WorkspaceUsagePage({ workspaceId }: { workspaceId: string }) {
                 <th className="px-6 py-3 font-medium">Time</th>
                 <th className="px-4 py-3 font-medium">Reason</th>
                 <th className="px-4 py-3 font-medium">Change</th>
-                <th className="px-6 py-3 text-right font-medium">Balance after</th>
+                <th className="px-6 py-3 text-right font-medium">
+                  Balance after
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y">
               {data.recentLedger.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-6 py-8 text-center text-muted-foreground">
+                  <td
+                    colSpan={4}
+                    className="px-6 py-8 text-center text-muted-foreground"
+                  >
                     No credit transactions yet.
                   </td>
                 </tr>
