@@ -77,7 +77,7 @@ function ProPlanCard({ workspaceId }: { workspaceId: string }) {
 
   if (collapsed) return null;
 
-  const balance = usage.data?.credits.balance ?? 0;
+  const balance = usage.data?.credits.available ?? 0;
   const lifetimeUsed = usage.data?.credits.lifetimeUsed ?? 0;
   const creditPool = Math.max(1, balance + lifetimeUsed);
   const usedPercent = Math.min(

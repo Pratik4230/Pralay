@@ -82,6 +82,7 @@ export type CreateChatRunContext = {
   disableCheckpointing?: boolean;
   events?: {
     onModelStart?: (iteration: number) => Promise<void> | void;
+    onModelError?: (iteration: number, error: unknown) => Promise<void> | void;
     onModelEnd?: (usage: {
       iteration: number;
       provider: "openai";
@@ -278,24 +279,29 @@ export async function runCreateChatTurn(
     }
 
     const payload = assertSafeCreateChatPayload(state.messages);
-    await context.events?.onModelStart?.(state.iteration);
     const modelStartedAt = Date.now();
 
     let response: AIMessage | AIMessageChunk;
-    if (context.events?.onTextDelta) {
-      let aggregate: AIMessageChunk | undefined;
-      const stream = await modelWithTools.stream(state.messages);
-      for await (const chunk of stream) {
-        aggregate = aggregate ? aggregate.concat(chunk) : chunk;
-        const delta = extractMessageText(chunk.content);
-        if (delta) await context.events.onTextDelta(delta);
+    try {
+      await context.events?.onModelStart?.(state.iteration);
+      if (context.events?.onTextDelta) {
+        let aggregate: AIMessageChunk | undefined;
+        const stream = await modelWithTools.stream(state.messages);
+        for await (const chunk of stream) {
+          aggregate = aggregate ? aggregate.concat(chunk) : chunk;
+          const delta = extractMessageText(chunk.content);
+          if (delta) await context.events.onTextDelta(delta);
+        }
+        if (!aggregate) {
+          throw new Error("Create chat model returned an empty stream");
+        }
+        response = aggregate;
+      } else {
+        response = await modelWithTools.invoke(state.messages);
       }
-      if (!aggregate) {
-        throw new Error("Create chat model returned an empty stream");
-      }
-      response = aggregate;
-    } else {
-      response = await modelWithTools.invoke(state.messages);
+    } catch (error) {
+      await context.events?.onModelError?.(state.iteration, error);
+      throw error;
     }
 
     const metadata = response.response_metadata as {

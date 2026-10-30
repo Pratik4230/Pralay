@@ -15,6 +15,7 @@ import {
 } from "@repo/validators";
 
 import type { AuthVariables } from "../../../global/middleware/session.js";
+import { InsufficientCreditsError } from "@repo/usage";
 import { WorkspaceAccessError } from "../../workspace/services/workspace-access.service.js";
 import {
   createProjectGeneration,
@@ -34,6 +35,16 @@ const storageNotConfiguredError = {
     message: "File storage is not configured",
   },
 };
+
+function insufficientCreditsError(error: InsufficientCreditsError) {
+  return {
+    error: {
+      code: "INSUFFICIENT_CREDITS" as const,
+      message: error.message,
+      details: { available: error.available, required: error.required },
+    },
+  };
+}
 
 function workspaceProjectParams(c: Context<{ Variables: AuthVariables }>) {
   return {
@@ -89,6 +100,9 @@ export async function createProjectGenerationController(
     }
     if (error instanceof StorageNotConfiguredError) {
       return c.json(storageNotConfiguredError, 503);
+    }
+    if (error instanceof InsufficientCreditsError) {
+      return c.json(insufficientCreditsError(error), 402);
     }
     throw error;
   }
@@ -202,6 +216,9 @@ export async function retryProjectGenerationController(
     }
     if (error instanceof GenerationNotRetryableError) {
       return c.json(generationNotRetryableError, 409);
+    }
+    if (error instanceof InsufficientCreditsError) {
+      return c.json(insufficientCreditsError(error), 402);
     }
     throw error;
   }

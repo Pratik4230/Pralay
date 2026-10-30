@@ -9,7 +9,11 @@ import { and, eq, inArray, isNull, or } from "drizzle-orm";
 
 import { db } from "@repo/db";
 import { assets, assistantMessages } from "@repo/db/schema";
-import { recordAiUsage } from "@repo/usage";
+import {
+  recordAiUsage,
+  releaseAiCreditReservation,
+  reserveAiCredits,
+} from "@repo/usage";
 
 import { searchWorkspaceAssetsForCreateAgent } from "../../assets/services/create-asset-search.service.js";
 import {
@@ -192,8 +196,19 @@ export function createCreateChatToolHandlers(input: {
     },
 
     webSearch: async ({ query }) => {
+      const current = input.getUserMessageRow();
+      const reservationKey = `web-search:${current.id}:${query}`;
+      const startedAt = new Date();
       try {
-        const current = input.getUserMessageRow();
+        await reserveAiCredits({
+          idempotencyKey: reservationKey,
+          workspaceId: input.workspaceId,
+          projectId: input.projectId,
+          userId: input.actorUserId,
+          operation: "tool.web_search",
+          credits: 4,
+          expiresAt: new Date(Date.now() + 10 * 60 * 1_000),
+        });
         const summary = await runOpenAiWebSearch(query, {
           onUsage: async (usage) => {
             const completedAt = new Date();
@@ -217,6 +232,7 @@ export function createCreateChatToolHandlers(input: {
                 startedAt: new Date(completedAt.getTime() - usage.latencyMs),
                 completedAt,
                 metadata: { userMessageId: current.id },
+                reservationKey,
               });
             } catch (error) {
               console.error("[usage] could not record web search usage", error);
@@ -225,6 +241,27 @@ export function createCreateChatToolHandlers(input: {
         });
         return { summary };
       } catch (error) {
+        try {
+          await recordAiUsage({
+            idempotencyKey: `${reservationKey}:failed`,
+            workspaceId: input.workspaceId,
+            projectId: input.projectId,
+            userId: input.actorUserId,
+            operation: "tool.web_search",
+            modality: "tool",
+            status: "failed",
+            provider: "openai",
+            model: "web_search",
+            metrics: { requests: 1 },
+            latencyMs: Date.now() - startedAt.getTime(),
+            errorCode: error instanceof Error ? error.name : "tool_error",
+            startedAt,
+            reservationKey,
+          });
+        } catch (usageError) {
+          await releaseAiCreditReservation(reservationKey);
+          console.error("[usage] could not record web search failure", usageError);
+        }
         const message =
           error instanceof Error ? error.message : "Web search failed";
         return { summary: message };

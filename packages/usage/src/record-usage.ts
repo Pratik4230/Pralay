@@ -1,8 +1,9 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { db } from "@repo/db";
 import {
   aiUsageEvents,
+  aiCreditReservations,
   type AiUsageMetrics,
   type AiUsageModality,
   type AiUsageStatus,
@@ -11,6 +12,7 @@ import {
 } from "@repo/db/schema";
 
 import { AI_CREDIT_POLICY_VERSION, calculateUsageCredits } from "./credits.js";
+import { InsufficientCreditsError } from "./errors.js";
 
 export type RecordAiUsageInput = {
   idempotencyKey: string;
@@ -38,6 +40,8 @@ export type RecordAiUsageInput = {
   metadata?: Record<string, unknown>;
   startedAt: Date;
   completedAt?: Date;
+  /** Stable key returned to the provider-facing operation before it starts. */
+  reservationKey?: string | null;
 };
 
 export async function recordAiUsage(input: RecordAiUsageInput) {
@@ -111,17 +115,67 @@ export async function recordAiUsage(input: RecordAiUsageInput) {
       .values({ workspaceId: input.workspaceId })
       .onConflictDoNothing({ target: workspaceCredits.workspaceId });
 
+    const [reservation] = input.reservationKey
+      ? await tx
+          .select()
+          .from(aiCreditReservations)
+          .where(eq(aiCreditReservations.idempotencyKey, input.reservationKey))
+          .limit(1)
+          .for("update")
+      : [];
+
     if (credits > 0) {
+      const reservedCredits =
+        reservation?.status === "active" ? reservation.credits : 0;
       const [account] = await tx
         .update(workspaceCredits)
         .set({
           balance: sql`${workspaceCredits.balance} - ${credits}`,
+          reservedCredits: sql`greatest(0, ${workspaceCredits.reservedCredits} - ${reservedCredits})`,
           lifetimeUsed: sql`${workspaceCredits.lifetimeUsed} + ${credits}`,
           updatedAt: completedAt,
         })
-        .where(eq(workspaceCredits.workspaceId, input.workspaceId))
-        .returning({ balance: workspaceCredits.balance });
-      if (!account) throw new Error("Workspace credit account was not found");
+        .where(
+          and(
+            eq(workspaceCredits.workspaceId, input.workspaceId),
+            reservation?.status === "active"
+              ? sql`${workspaceCredits.balance} - ${workspaceCredits.reservedCredits} + ${reservedCredits} >= ${credits} and ${workspaceCredits.reservedCredits} >= ${reservedCredits}`
+              : sql`${workspaceCredits.balance} - ${workspaceCredits.reservedCredits} >= ${credits}`,
+          ),
+        )
+        .returning({
+          balance: workspaceCredits.balance,
+          reservedCredits: workspaceCredits.reservedCredits,
+        });
+      if (!account) {
+        const [current] = await tx
+          .select({
+            balance: workspaceCredits.balance,
+            reservedCredits: workspaceCredits.reservedCredits,
+          })
+          .from(workspaceCredits)
+          .where(eq(workspaceCredits.workspaceId, input.workspaceId))
+          .limit(1);
+        throw new InsufficientCreditsError(
+          Math.max(
+            0,
+            (current?.balance ?? 0) - (current?.reservedCredits ?? 0) +
+              reservedCredits,
+          ),
+          credits,
+        );
+      }
+
+      if (reservation?.status === "active") {
+        await tx
+          .update(aiCreditReservations)
+          .set({
+            status: "settled",
+            usageEventId: created.id,
+            updatedAt: completedAt,
+          })
+          .where(eq(aiCreditReservations.id, reservation.id));
+      }
 
       await tx
         .insert(usageLedger)
@@ -136,6 +190,22 @@ export async function recordAiUsage(input: RecordAiUsageInput) {
           reason: input.operation,
         })
         .onConflictDoNothing({ target: usageLedger.idempotencyKey });
+    } else if (reservation?.status === "active") {
+      await tx
+        .update(workspaceCredits)
+        .set({
+          reservedCredits: sql`greatest(0, ${workspaceCredits.reservedCredits} - ${reservation.credits})`,
+          updatedAt: completedAt,
+        })
+        .where(eq(workspaceCredits.workspaceId, input.workspaceId));
+      await tx
+        .update(aiCreditReservations)
+        .set({
+          status: status === "failed" ? "released" : "settled",
+          usageEventId: created.id,
+          updatedAt: completedAt,
+        })
+        .where(eq(aiCreditReservations.id, reservation.id));
     }
 
     return { event: created, duplicate: false };

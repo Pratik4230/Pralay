@@ -9,7 +9,12 @@ import {
 } from "@repo/agents";
 import { randomUUID } from "node:crypto";
 import { hasOpenAiApiKey } from "@repo/env";
-import { recordAiUsage } from "@repo/usage";
+import {
+  InsufficientCreditsError,
+  recordAiUsage,
+  releaseAiCreditReservation,
+  reserveAiCredits,
+} from "@repo/usage";
 import type {
   CreateChatModelId,
   SendProjectAssistantMessageBody,
@@ -27,6 +32,14 @@ const PLACEHOLDER_NO_OPENAI =
 
 const MODEL_ERROR_REPLY =
   "I could not generate a reply right now. Please try again in a moment.";
+const INSUFFICIENT_CREDITS_REPLY =
+  "This workspace does not have enough AI credits for that request. Ask a workspace admin to review AI usage.";
+
+const CREATE_CHAT_RESERVATION_CREDITS = 32;
+
+function modelReservationKey(input: ChatTurnInput, iteration: number) {
+  return `create-chat:${input.runId ?? input.userMessageId}:model:${iteration}`;
+}
 
 export type CreateAssistantChatContext = {
   actorUserId: string;
@@ -44,10 +57,47 @@ function buildRunContext(
   chatContext: CreateAssistantChatContext,
   input: ChatTurnInput,
 ): CreateChatRunContext {
+  const modelStartedAt = new Map<number, Date>();
   return {
     toolHandlers: createCreateChatToolHandlers(chatContext),
     events: {
       ...chatContext.events,
+      onModelStart: async (iteration) => {
+        await reserveAiCredits({
+          idempotencyKey: modelReservationKey(input, iteration),
+          workspaceId: chatContext.workspaceId,
+          projectId: chatContext.projectId,
+          userId: chatContext.actorUserId,
+          operation: "text.chat",
+          credits: CREATE_CHAT_RESERVATION_CREDITS,
+          expiresAt: new Date(Date.now() + 10 * 60 * 1_000),
+        });
+        modelStartedAt.set(iteration, new Date());
+        await chatContext.events?.onModelStart?.(iteration);
+      },
+      onModelError: async (iteration, error) => {
+        const completedAt = new Date();
+        const startedAt = modelStartedAt.get(iteration) ?? completedAt;
+        await recordAiUsage({
+          idempotencyKey: `${modelReservationKey(input, iteration)}:failed`,
+          workspaceId: chatContext.workspaceId,
+          projectId: chatContext.projectId,
+          userId: chatContext.actorUserId,
+          assistantRunId: input.runId ?? null,
+          operation: "text.chat",
+          modality: "text",
+          status: "failed",
+          provider: "openai",
+          model: input.chatModelId,
+          latencyMs: completedAt.getTime() - startedAt.getTime(),
+          errorCode: error instanceof Error ? error.name : "model_error",
+          startedAt,
+          completedAt,
+          metadata: { iteration },
+          reservationKey: modelReservationKey(input, iteration),
+        });
+        await chatContext.events?.onModelError?.(iteration, error);
+      },
       onModelEnd: async (usage) => {
         await chatContext.events?.onModelEnd?.(usage);
         const completedAt = new Date();
@@ -71,6 +121,7 @@ function buildRunContext(
             startedAt: new Date(completedAt.getTime() - usage.latencyMs),
             completedAt,
             metadata: { iteration: usage.iteration },
+            reservationKey: modelReservationKey(input, usage.iteration),
           });
         } catch (error) {
           console.error("[usage] could not record Create chat usage", error);
@@ -125,6 +176,9 @@ export async function generateCreateAssistantReply(
     );
   } catch (error) {
     console.error("[create-assistant] chat turn failed", error);
+    if (error instanceof InsufficientCreditsError) {
+      return INSUFFICIENT_CREDITS_REPLY;
+    }
     return MODEL_ERROR_REPLY;
   }
 }
@@ -160,7 +214,9 @@ export async function* streamCreateAssistantReply(
     );
   } catch (error) {
     console.error("[create-assistant] chat stream failed", error);
-    yield MODEL_ERROR_REPLY;
+    yield error instanceof InsufficientCreditsError
+      ? INSUFFICIENT_CREDITS_REPLY
+      : MODEL_ERROR_REPLY;
   }
 }
 
@@ -177,7 +233,20 @@ export async function maybeGenerateCreateThreadTitle(
     return null;
   }
 
+  const reservationKey = context ? `thread-title:${context.threadId}` : null;
+
   try {
+    if (context && reservationKey) {
+      await reserveAiCredits({
+        idempotencyKey: reservationKey,
+        workspaceId: context.workspaceId,
+        projectId: context.projectId,
+        userId: context.userId,
+        operation: "text.thread_title",
+        credits: 4,
+        expiresAt: new Date(Date.now() + 5 * 60 * 1_000),
+      });
+    }
     return await generateCreateThreadTitle(userPrompt, {
       onUsage: context
         ? async (usage) => {
@@ -201,6 +270,7 @@ export async function maybeGenerateCreateThreadTitle(
                 startedAt: new Date(completedAt.getTime() - usage.latencyMs),
                 completedAt,
                 metadata: { threadId: context.threadId },
+                reservationKey,
               });
             } catch (error) {
               console.error(
@@ -212,6 +282,7 @@ export async function maybeGenerateCreateThreadTitle(
         : undefined,
     });
   } catch (error) {
+    if (reservationKey) await releaseAiCreditReservation(reservationKey);
     console.error("[create-assistant] thread title failed", error);
     return null;
   }

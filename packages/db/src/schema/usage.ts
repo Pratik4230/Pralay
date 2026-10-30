@@ -93,11 +93,54 @@ export const workspaceCredits = pgTable("workspace_credits", {
     .primaryKey()
     .references(() => workspaces.id, { onDelete: "cascade" }),
   balance: integer("balance").notNull().default(5_000),
+  reservedCredits: integer("reserved_credits").notNull().default(0),
   lifetimeUsed: integer("lifetime_used").notNull().default(0),
+  lowCreditThreshold: integer("low_credit_threshold").notNull().default(500),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
 });
+
+export const aiCreditReservations = pgTable(
+  "ai_credit_reservations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
+    userId: text("user_id"),
+    operation: text("operation").notNull(),
+    credits: integer("credits").notNull(),
+    status: text("status")
+      .$type<"active" | "settled" | "released">()
+      .notNull()
+      .default("active"),
+    usageEventId: uuid("usage_event_id").references(() => aiUsageEvents.id, {
+      onDelete: "set null",
+    }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("ai_credit_reservations_idempotency_key_unique").on(
+      table.idempotencyKey,
+    ),
+    index("ai_credit_reservations_workspace_status_idx").on(
+      table.workspaceId,
+      table.status,
+    ),
+    index("ai_credit_reservations_expires_at_idx").on(table.expiresAt),
+  ],
+);
 
 /** Immutable credit transactions, including usage debits and future grants. */
 export const usageLedger = pgTable(

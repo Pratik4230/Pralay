@@ -54,6 +54,10 @@ export const createProjectGenerationRoute = createRoute({
       description: "Unauthorized",
       content: { "application/json": { schema: apiErrorSchema } },
     },
+    402: {
+      description: "Insufficient workspace AI credits",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
     404: {
       description: "Workspace or project not found",
       content: { "application/json": { schema: apiErrorSchema } },
@@ -134,6 +138,10 @@ export const retryProjectGenerationRoute = createRoute({
     },
     401: {
       description: "Unauthorized",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+    402: {
+      description: "Insufficient workspace AI credits",
       content: { "application/json": { schema: apiErrorSchema } },
     },
     404: {

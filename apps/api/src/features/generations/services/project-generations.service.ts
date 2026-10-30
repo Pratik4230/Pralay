@@ -23,7 +23,11 @@ import {
 } from "@repo/storage";
 import type { CreateProjectGenerationBody } from "@repo/validators";
 import { normalizeWorkspaceAssetDisplayNameOrDefault } from "@repo/validators/asset";
-import { recordAiUsage } from "@repo/usage";
+import {
+  recordAiUsage,
+  releaseAiCreditReservation,
+  reserveAiCredits,
+} from "@repo/usage";
 
 import { inngest } from "../../../inngest/client.js";
 import {
@@ -81,6 +85,11 @@ export class GenerationNotRetryableError extends Error {
 }
 
 type GenerationRow = typeof generations.$inferSelect;
+const IMAGE_GENERATION_CREDITS = 40;
+
+function generationReservationKey(generationId: string) {
+  return `generation:${generationId}`;
+}
 
 type OutputAssetPreview = {
   id: string;
@@ -132,6 +141,7 @@ async function recordCompletedGenerationUsage(row: GenerationRow) {
     startedAt,
     completedAt,
     metadata: { generationType: row.type },
+    reservationKey: isAiOperation ? generationReservationKey(row.id) : null,
   });
 
   if (row.creditCost !== result.event.creditsCharged) {
@@ -465,10 +475,27 @@ export async function insertQueuedProjectGeneration(
       ? { provider: "sharp", model: null }
       : resolveImageGenerationDefaults();
 
-  const generation = await db.transaction(async (tx) => {
+  const generationId = randomUUID();
+  const needsAiCredits = generationType !== "resize";
+  if (needsAiCredits) {
+    await reserveAiCredits({
+      idempotencyKey: generationReservationKey(generationId),
+      workspaceId: input.workspaceId,
+      projectId: input.projectId,
+      userId: input.createdBy,
+      operation:
+        generationType === "generate" ? "image.generate" : "image.edit",
+      credits: IMAGE_GENERATION_CREDITS,
+    });
+  }
+
+  let generation: GenerationRow;
+  try {
+    generation = await db.transaction(async (tx) => {
     const [created] = await tx
       .insert(generations)
       .values({
+        id: generationId,
         workspaceId: input.workspaceId,
         projectId: input.projectId,
         createdBy: input.createdBy,
@@ -497,8 +524,14 @@ export async function insertQueuedProjectGeneration(
       message: "Generation queued",
     });
 
-    return created;
-  });
+      return created;
+    });
+  } catch (error) {
+    if (needsAiCredits) {
+      await releaseAiCreditReservation(generationReservationKey(generationId));
+    }
+    throw error;
+  }
 
   try {
     await inngest.send({
@@ -508,6 +541,9 @@ export async function insertQueuedProjectGeneration(
     });
     return generation;
   } catch {
+    if (needsAiCredits) {
+      await releaseAiCreditReservation(generationReservationKey(generation.id));
+    }
     const [failed] = await db
       .update(generations)
       .set({
@@ -762,6 +798,31 @@ export async function retryProjectGeneration(
 ) {
   await getWorkspaceProject(actorUserId, workspaceId, projectId);
 
+  const [retryCandidate] = await db
+    .select({ type: generations.type })
+    .from(generations)
+    .where(
+      and(
+        eq(generations.id, generationId),
+        eq(generations.workspaceId, workspaceId),
+        eq(generations.projectId, projectId),
+        eq(generations.status, "failed"),
+        isNull(generations.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (retryCandidate && retryCandidate.type !== "resize") {
+    await reserveAiCredits({
+      idempotencyKey: generationReservationKey(generationId),
+      workspaceId,
+      projectId,
+      userId: actorUserId,
+      operation:
+        retryCandidate.type === "generate" ? "image.generate" : "image.edit",
+      credits: IMAGE_GENERATION_CREDITS,
+    });
+  }
+
   const now = new Date();
   const [queued] = await db
     .update(generations)
@@ -786,6 +847,9 @@ export async function retryProjectGeneration(
     .returning();
 
   if (!queued) {
+    if (retryCandidate && retryCandidate.type !== "resize") {
+      await releaseAiCreditReservation(generationReservationKey(generationId));
+    }
     const [existing] = await db
       .select({ id: generations.id })
       .from(generations)
@@ -878,6 +942,32 @@ export async function markGenerationFailed(
     .returning();
 
   if (!failed) throw new Error("Failed to mark generation as failed");
+
+  if (failed.type !== "resize") {
+    const completedAt = failed.completedAt ?? new Date();
+    const startedAt = failed.startedAt ?? failed.createdAt;
+    await recordAiUsage({
+      idempotencyKey: `generation:${generationId}:failed:${failed.retryCount}`,
+      workspaceId: failed.workspaceId,
+      projectId: failed.projectId,
+      userId: failed.createdBy,
+      generationId,
+      operation: failed.type === "generate" ? "image.generate" : "image.edit",
+      modality: "image",
+      status: "failed",
+      provider: failed.provider ?? "unknown",
+      model: failed.model ?? "unknown",
+      metrics: {
+        inputImages: failed.inputAssetIds.length,
+        attempts: failed.retryCount + 1,
+      },
+      latencyMs: Math.max(0, completedAt.getTime() - startedAt.getTime()),
+      errorCode: failed.errorCode,
+      startedAt,
+      completedAt,
+      reservationKey: generationReservationKey(generationId),
+    });
+  }
 
   await recordGenerationEvent(
     generationId,

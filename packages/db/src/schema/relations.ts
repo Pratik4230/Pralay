@@ -15,7 +15,12 @@ import { projectAssets } from "./project-assets.js";
 import { projectMembers } from "./project-members.js";
 import { projects } from "./projects.js";
 import { templates } from "./templates.js";
-import { aiUsageEvents, usageLedger, workspaceCredits } from "./usage.js";
+import {
+  aiCreditReservations,
+  aiUsageEvents,
+  usageLedger,
+  workspaceCredits,
+} from "./usage.js";
 import { userWorkspacePreferences } from "./user-workspace-preferences.js";
 import { workspaceInvites } from "./workspace-invites.js";
 import { workspaceMembers } from "./workspace-members.js";
@@ -285,6 +290,24 @@ export const workspaceCreditsRelations = relations(
     workspace: one(workspaces, {
       fields: [workspaceCredits.workspaceId],
       references: [workspaces.id],
+    }),
+  }),
+);
+
+export const aiCreditReservationsRelations = relations(
+  aiCreditReservations,
+  ({ one }) => ({
+    workspace: one(workspaces, {
+      fields: [aiCreditReservations.workspaceId],
+      references: [workspaces.id],
+    }),
+    project: one(projects, {
+      fields: [aiCreditReservations.projectId],
+      references: [projects.id],
+    }),
+    usageEvent: one(aiUsageEvents, {
+      fields: [aiCreditReservations.usageEventId],
+      references: [aiUsageEvents.id],
     }),
   }),
 );

@@ -30,8 +30,10 @@ export const workspaceKeys = {
   trash: (workspaceId: string) => ["workspaces", workspaceId, "trash"] as const,
   projectTrash: (workspaceId: string, projectId: string) =>
     ["workspaces", workspaceId, "projects", projectId, "trash"] as const,
+  usageRoot: (workspaceId: string) =>
+    ["workspaces", workspaceId, "usage"] as const,
   usage: (workspaceId: string, days: number) =>
-    ["workspaces", workspaceId, "usage", days] as const,
+    [...workspaceKeys.usageRoot(workspaceId), days] as const,
 };
 
 export const meKeys = {

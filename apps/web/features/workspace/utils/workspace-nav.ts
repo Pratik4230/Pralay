@@ -1,5 +1,6 @@
 import {
   FolderKanbanIcon,
+  GaugeIcon,
   ImagesIcon,
   LayoutGridIcon,
   MailIcon,
@@ -54,6 +55,11 @@ export function buildWorkspaceNavItems(
       label: "Library",
       href: `${base}/library`,
       icon: ImagesIcon,
+    },
+    {
+      label: "AI usage",
+      href: `${base}/usage`,
+      icon: GaugeIcon,
     },
   ];
 

@@ -1,8 +1,12 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { workspaceUsageSummaryResponseSchema } from "@repo/validators";
+import {
+  updateWorkspaceUsageBudgetBodySchema,
+  workspaceUsageBudgetResponseSchema,
+  workspaceUsageSummaryResponseSchema,
+} from "@repo/validators";
 
 import { fetchApiClient } from "@/global/utils/api-client";
 import { workspaceKeys } from "@/features/workspace/utils/query-keys";
@@ -16,5 +20,21 @@ export function useWorkspaceUsage(workspaceId: string, days = 30) {
       ).then((data) => workspaceUsageSummaryResponseSchema.parse(data)),
     enabled: Boolean(workspaceId),
     staleTime: 30_000,
+  });
+}
+
+export function useUpdateWorkspaceUsageBudget(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { lowCreditThreshold: number }) =>
+      fetchApiClient(`/api/v1/workspaces/${workspaceId}/usage/budget`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updateWorkspaceUsageBudgetBodySchema.parse(input)),
+      }).then((data) => workspaceUsageBudgetResponseSchema.parse(data)),
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        queryKey: workspaceKeys.usageRoot(workspaceId),
+      }),
   });
 }
