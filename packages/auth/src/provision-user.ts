@@ -2,6 +2,7 @@ import { db } from "@repo/db";
 import {
   collections,
   userWorkspacePreferences,
+  workspaceCredits,
   workspaceMembers,
   workspaces,
 } from "@repo/db/schema";
@@ -49,6 +50,8 @@ export async function provisionNewUser(user: NewUser): Promise<void> {
       userId: user.id,
       role: "owner",
     });
+
+    await tx.insert(workspaceCredits).values({ workspaceId: workspace.id });
 
     await tx.insert(userWorkspacePreferences).values({
       userId: user.id,

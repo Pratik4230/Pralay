@@ -8,6 +8,16 @@ const MAX_TITLE_LENGTH = 120;
 
 export async function generateCreateThreadTitle(
   userPrompt: string,
+  options?: {
+    onUsage?: (usage: {
+      provider: "openai";
+      model: typeof CREATE_THREAD_TITLE_MODEL_ID;
+      inputTokens: number | null;
+      outputTokens: number | null;
+      providerRequestId: string | null;
+      latencyMs: number;
+    }) => Promise<void> | void;
+  },
 ): Promise<string> {
   const trimmed = userPrompt.replace(/\s+/g, " ").trim();
   if (!trimmed) {
@@ -20,12 +30,21 @@ export async function generateCreateThreadTitle(
     maxTokens: 32,
   });
 
+  const startedAt = Date.now();
   const response = await model.invoke([
     new SystemMessage(
       "Write a very short chat thread title (3 to 8 words) summarizing the user's creative request. No quotes. No punctuation at the end.",
     ),
     new HumanMessage(trimmed.slice(0, 500)),
   ]);
+  await options?.onUsage?.({
+    provider: "openai",
+    model: CREATE_THREAD_TITLE_MODEL_ID,
+    inputTokens: response.usage_metadata?.input_tokens ?? null,
+    outputTokens: response.usage_metadata?.output_tokens ?? null,
+    providerRequestId: response.id ?? null,
+    latencyMs: Date.now() - startedAt,
+  });
 
   const text =
     typeof response.content === "string"

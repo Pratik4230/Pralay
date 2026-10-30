@@ -23,6 +23,7 @@ import {
 } from "@repo/storage";
 import type { CreateProjectGenerationBody } from "@repo/validators";
 import { normalizeWorkspaceAssetDisplayNameOrDefault } from "@repo/validators/asset";
+import { recordAiUsage } from "@repo/usage";
 
 import { inngest } from "../../../inngest/client.js";
 import {
@@ -96,6 +97,50 @@ type GenerationEventPreview = {
   status: GenerationRow["status"];
   createdAt: string;
 };
+
+async function recordCompletedGenerationUsage(row: GenerationRow) {
+  if (row.status !== "completed") return;
+  const isAiOperation = row.type !== "resize";
+  const completedAt = row.completedAt ?? new Date();
+  const startedAt = row.startedAt ?? row.createdAt;
+  const result = await recordAiUsage({
+    idempotencyKey: `generation:${row.id}:completed`,
+    workspaceId: row.workspaceId,
+    projectId: row.projectId,
+    userId: row.createdBy,
+    generationId: row.id,
+    operation:
+      row.type === "generate"
+        ? "image.generate"
+        : row.type === "resize"
+          ? "media.resize"
+          : "image.edit",
+    modality: isAiOperation ? "image" : "other",
+    provider: row.provider ?? (isAiOperation ? "unknown" : "sharp"),
+    model: row.model ?? (isAiOperation ? "unknown" : "sharp"),
+    metrics: {
+      inputImages: row.inputAssetIds.length,
+      outputImages: isAiOperation ? 1 : 0,
+      width: row.width,
+      height: row.height,
+      pixels: row.width && row.height ? row.width * row.height : null,
+      attempts: row.retryCount + 1,
+    },
+    credits: isAiOperation ? undefined : 0,
+    latencyMs: Math.max(0, completedAt.getTime() - startedAt.getTime()),
+    providerRequestId: row.providerRequestId,
+    startedAt,
+    completedAt,
+    metadata: { generationType: row.type },
+  });
+
+  if (row.creditCost !== result.event.creditsCharged) {
+    await db
+      .update(generations)
+      .set({ creditCost: result.event.creditsCharged })
+      .where(eq(generations.id, row.id));
+  }
+}
 
 async function loadOutputAssetPreviews(
   outputAssetIds: string[],
@@ -856,7 +901,11 @@ export async function runGenerationJob(
     throw new GenerationNotFoundError();
   }
 
-  if (row.status === "completed" || row.status === "cancelled") {
+  if (row.status === "completed") {
+    await recordCompletedGenerationUsage(row);
+    return mapGenerationWithOutputs(row);
+  }
+  if (row.status === "cancelled") {
     return mapGenerationWithOutputs(row);
   }
 
@@ -1075,6 +1124,8 @@ export async function runGenerationJob(
     if (!completed) {
       throw new GenerationNotFoundError();
     }
+
+    await recordCompletedGenerationUsage(completed);
 
     return mapGenerationWithOutputs(completed);
   } catch (error) {

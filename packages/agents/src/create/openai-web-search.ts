@@ -1,6 +1,12 @@
 import { getOpenAiApiKey } from "@repo/env";
 
 type ResponsesPayload = {
+  id?: string;
+  model?: string;
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+  };
   output?: Array<{
     type?: string;
     content?: Array<{ type?: string; text?: string }>;
@@ -21,7 +27,19 @@ function extractResponseText(payload: ResponsesPayload): string {
 }
 
 /** OpenAI built-in web search via the Responses API. */
-export async function runOpenAiWebSearch(query: string): Promise<string> {
+export async function runOpenAiWebSearch(
+  query: string,
+  options?: {
+    onUsage?: (usage: {
+      provider: "openai";
+      model: string;
+      inputTokens: number | null;
+      outputTokens: number | null;
+      providerRequestId: string | null;
+      latencyMs: number;
+    }) => Promise<void> | void;
+  },
+): Promise<string> {
   const trimmed = query.trim();
   if (!trimmed) {
     return "Query was empty.";
@@ -46,15 +64,24 @@ export async function runOpenAiWebSearch(query: string): Promise<string> {
     return { response, payload };
   };
 
+  const startedAt = Date.now();
   let { response, payload } = await attempt("web_search");
   if (!response.ok) {
     ({ response, payload } = await attempt("web_search_preview"));
   }
 
+  await options?.onUsage?.({
+    provider: "openai",
+    model: payload.model ?? "gpt-5.6-luna",
+    inputTokens: payload.usage?.input_tokens ?? null,
+    outputTokens: payload.usage?.output_tokens ?? null,
+    providerRequestId: payload.id ?? null,
+    latencyMs: Date.now() - startedAt,
+  });
+
   if (!response.ok) {
     const message =
-      payload.error?.message ??
-      `OpenAI web search failed (${response.status})`;
+      payload.error?.message ?? `OpenAI web search failed (${response.status})`;
     throw new Error(message);
   }
 

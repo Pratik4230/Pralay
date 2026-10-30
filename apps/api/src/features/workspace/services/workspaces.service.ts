@@ -5,6 +5,7 @@ import {
   userWorkspacePreferences,
   workspaceMembers,
   workspaces,
+  workspaceCredits,
 } from "@repo/db/schema";
 import {
   createUniqueWorkspaceSlug,
@@ -220,6 +221,8 @@ export async function createWorkspaceForUser(
     if (!membership) {
       throw new Error("Failed to create workspace membership");
     }
+
+    await tx.insert(workspaceCredits).values({ workspaceId: workspace.id });
 
     await tx.insert(userWorkspacePreferences).values({
       userId,

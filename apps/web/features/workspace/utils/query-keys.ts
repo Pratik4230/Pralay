@@ -1,7 +1,6 @@
 export const workspaceKeys = {
   all: ["workspaces"] as const,
-  infiniteList: (limit: number) =>
-    ["workspaces", "infinite", limit] as const,
+  infiniteList: (limit: number) => ["workspaces", "infinite", limit] as const,
   detail: (id: string) => ["workspaces", id] as const,
   members: (workspaceId: string) =>
     ["workspaces", workspaceId, "members"] as const,
@@ -23,20 +22,16 @@ export const workspaceKeys = {
       projectId ?? "none",
     ] as const,
   assetSuggest: (workspaceId: string, projectId: string, q: string) =>
-    [
-      ...workspaceKeys.assets(workspaceId),
-      "suggest",
-      projectId,
-      q,
-    ] as const,
+    [...workspaceKeys.assets(workspaceId), "suggest", projectId, q] as const,
   projects: (workspaceId: string) =>
     ["workspaces", workspaceId, "projects"] as const,
   project: (workspaceId: string, projectId: string) =>
     ["workspaces", workspaceId, "projects", projectId] as const,
-  trash: (workspaceId: string) =>
-    ["workspaces", workspaceId, "trash"] as const,
+  trash: (workspaceId: string) => ["workspaces", workspaceId, "trash"] as const,
   projectTrash: (workspaceId: string, projectId: string) =>
     ["workspaces", workspaceId, "projects", projectId, "trash"] as const,
+  usage: (workspaceId: string, days: number) =>
+    ["workspaces", workspaceId, "usage", days] as const,
 };
 
 export const meKeys = {

@@ -1,4 +1,7 @@
-import { registerAuthHandler, registerAuthRoutes } from "./features/auth/index.js";
+import {
+  registerAuthHandler,
+  registerAuthRoutes,
+} from "./features/auth/index.js";
 import { registerAssetsFeature } from "./features/assets/index.js";
 import { registerAssistantFeature } from "./features/assistant/index.js";
 import { registerGenerationsFeature } from "./features/generations/index.js";
@@ -7,6 +10,7 @@ import { registerMediaFeature } from "./features/media/index.js";
 import { registerProjectsFeature } from "./features/projects/index.js";
 import { registerSystemFeature } from "./features/system/index.js";
 import { registerTrashFeature } from "./features/trash/index.js";
+import { registerUsageFeature } from "./features/usage/index.js";
 import { registerWorkspaceFeature } from "./features/workspace/index.js";
 import { createApp } from "./global/http/create-app.js";
 import { registerOpenApiDoc } from "./global/http/openapi-doc.js";
@@ -25,6 +29,7 @@ registerWorkspaceFeature(app);
 registerProjectsFeature(app);
 registerAssistantFeature(app);
 registerGenerationsFeature(app);
+registerUsageFeature(app);
 registerAssetsFeature(app);
 registerMediaFeature(app);
 registerTrashFeature(app);

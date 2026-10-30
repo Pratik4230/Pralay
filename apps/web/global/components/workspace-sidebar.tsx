@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import { ArrowLeftIcon } from "lucide-react";
 
 import { cn } from "@repo/ui/lib/utils";
-import { Button } from "@repo/ui/components/button";
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -24,6 +23,7 @@ import {
 
 import { WorkspaceAvatar } from "@/features/workspace/components/workspace-avatar";
 import { useWorkspace } from "@/features/workspace/hooks/use-workspaces";
+import { useWorkspaceUsage } from "@/features/workspace/hooks/use-workspace-usage";
 import { canManageWorkspace } from "@/features/workspace/utils/workspace-helpers";
 import {
   buildWorkspaceNavItems,
@@ -70,30 +70,49 @@ function WorkspaceSwitcher({ workspaceId }: { workspaceId: string }) {
   );
 }
 
-function ProPlanCard() {
+function ProPlanCard({ workspaceId }: { workspaceId: string }) {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
+  const usage = useWorkspaceUsage(workspaceId);
 
   if (collapsed) return null;
+
+  const balance = usage.data?.credits.balance ?? 0;
+  const lifetimeUsed = usage.data?.credits.lifetimeUsed ?? 0;
+  const creditPool = Math.max(1, balance + lifetimeUsed);
+  const usedPercent = Math.min(
+    100,
+    Math.max(0, Math.round((lifetimeUsed / creditPool) * 100)),
+  );
 
   return (
     <div className="mx-2 mb-2 rounded-xl border border-border/60 bg-background p-4">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-semibold">Pro Plan</p>
+        <p className="text-sm font-semibold">AI usage</p>
         <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
-          Soon
+          Live
         </span>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
-        Usage and credits tracking is coming soon.
+        Text, image, and future AI operations share one credit balance.
       </p>
       <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
-        <div className="h-full w-[46%] rounded-full bg-primary" />
+        <div
+          className="h-full rounded-full bg-primary transition-[width]"
+          style={{ width: `${usedPercent}%` }}
+        />
       </div>
-      <p className="mt-2 text-[11px] text-muted-foreground">2,340 / 5,000 credits</p>
-      <Button type="button" size="sm" className="mt-3 w-full" disabled>
-        Upgrade Plan
-      </Button>
+      <p className="mt-2 text-[11px] text-muted-foreground">
+        {usage.isLoading
+          ? "Loading usage..."
+          : `${balance.toLocaleString()} credits remaining`}
+      </p>
+      {usage.data ? (
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          {usage.data.totals.operations.toLocaleString()} operations in the last{" "}
+          {usage.data.periodDays} days
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -214,5 +233,7 @@ export function WorkspaceSidebarSections() {
 }
 
 export function WorkspaceSidebarFooter() {
-  return <ProPlanCard />;
+  const pathname = usePathname();
+  const workspaceId = getWorkspaceIdFromPath(pathname);
+  return workspaceId ? <ProPlanCard workspaceId={workspaceId} /> : null;
 }

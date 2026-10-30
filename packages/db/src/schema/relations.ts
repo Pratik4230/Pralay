@@ -1,9 +1,6 @@
 import { relations } from "drizzle-orm";
 
-import {
-  assistantMessages,
-  assistantThreads,
-} from "./assistant-chat.js";
+import { assistantMessages, assistantThreads } from "./assistant-chat.js";
 import { assets } from "./assets.js";
 import { assetVersions } from "./asset-versions.js";
 import { brandKitAssets } from "./brand-kit-assets.js";
@@ -18,7 +15,7 @@ import { projectAssets } from "./project-assets.js";
 import { projectMembers } from "./project-members.js";
 import { projects } from "./projects.js";
 import { templates } from "./templates.js";
-import { usageLedger, workspaceCredits } from "./usage.js";
+import { aiUsageEvents, usageLedger, workspaceCredits } from "./usage.js";
 import { userWorkspacePreferences } from "./user-workspace-preferences.js";
 import { workspaceInvites } from "./workspace-invites.js";
 import { workspaceMembers } from "./workspace-members.js";
@@ -36,6 +33,7 @@ export const workspacesRelations = relations(workspaces, ({ many, one }) => ({
   brandKit: one(brandKits),
   credits: one(workspaceCredits),
   usageEntries: many(usageLedger),
+  aiUsageEvents: many(aiUsageEvents),
   notifications: many(notifications),
   presets: many(presets),
   templates: many(templates),
@@ -298,6 +296,25 @@ export const usageLedgerRelations = relations(usageLedger, ({ one }) => ({
   }),
   generation: one(generations, {
     fields: [usageLedger.generationId],
+    references: [generations.id],
+  }),
+  usageEvent: one(aiUsageEvents, {
+    fields: [usageLedger.usageEventId],
+    references: [aiUsageEvents.id],
+  }),
+}));
+
+export const aiUsageEventsRelations = relations(aiUsageEvents, ({ one }) => ({
+  workspace: one(workspaces, {
+    fields: [aiUsageEvents.workspaceId],
+    references: [workspaces.id],
+  }),
+  project: one(projects, {
+    fields: [aiUsageEvents.projectId],
+    references: [projects.id],
+  }),
+  generation: one(generations, {
+    fields: [aiUsageEvents.generationId],
     references: [generations.id],
   }),
 }));

@@ -82,6 +82,15 @@ export type CreateChatRunContext = {
   disableCheckpointing?: boolean;
   events?: {
     onModelStart?: (iteration: number) => Promise<void> | void;
+    onModelEnd?: (usage: {
+      iteration: number;
+      provider: "openai";
+      model: CreateChatModelId;
+      inputTokens: number | null;
+      outputTokens: number | null;
+      providerRequestId: string | null;
+      latencyMs: number;
+    }) => Promise<void> | void;
     onTextDelta?: (delta: string) => Promise<void> | void;
     onToolStart?: (name: string) => Promise<void> | void;
     onToolEnd?: (name: string) => Promise<void> | void;
@@ -270,6 +279,7 @@ export async function runCreateChatTurn(
 
     const payload = assertSafeCreateChatPayload(state.messages);
     await context.events?.onModelStart?.(state.iteration);
+    const modelStartedAt = Date.now();
 
     let response: AIMessage | AIMessageChunk;
     if (context.events?.onTextDelta) {
@@ -309,6 +319,15 @@ export async function runCreateChatTurn(
       inputTokens: response.usage_metadata?.input_tokens,
       outputTokens: response.usage_metadata?.output_tokens,
       rateLimits,
+    });
+    await context.events?.onModelEnd?.({
+      iteration: state.iteration,
+      provider: "openai",
+      model: input.chatModelId,
+      inputTokens: response.usage_metadata?.input_tokens ?? null,
+      outputTokens: response.usage_metadata?.output_tokens ?? null,
+      providerRequestId: response.id ?? null,
+      latencyMs: Date.now() - modelStartedAt,
     });
 
     const toolCalls = response.tool_calls ?? [];

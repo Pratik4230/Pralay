@@ -9,6 +9,7 @@ import { and, eq, inArray, isNull, or } from "drizzle-orm";
 
 import { db } from "@repo/db";
 import { assets, assistantMessages } from "@repo/db/schema";
+import { recordAiUsage } from "@repo/usage";
 
 import { searchWorkspaceAssetsForCreateAgent } from "../../assets/services/create-asset-search.service.js";
 import {
@@ -192,7 +193,36 @@ export function createCreateChatToolHandlers(input: {
 
     webSearch: async ({ query }) => {
       try {
-        const summary = await runOpenAiWebSearch(query);
+        const current = input.getUserMessageRow();
+        const summary = await runOpenAiWebSearch(query, {
+          onUsage: async (usage) => {
+            const completedAt = new Date();
+            try {
+              await recordAiUsage({
+                idempotencyKey: usage.providerRequestId
+                  ? `openai:${usage.providerRequestId}`
+                  : `web-search:${current.id}`,
+                workspaceId: input.workspaceId,
+                projectId: input.projectId,
+                userId: input.actorUserId,
+                operation: "tool.web_search",
+                modality: "tool",
+                provider: usage.provider,
+                model: usage.model,
+                metrics: { requests: 1 },
+                inputTokens: usage.inputTokens,
+                outputTokens: usage.outputTokens,
+                latencyMs: usage.latencyMs,
+                providerRequestId: usage.providerRequestId,
+                startedAt: new Date(completedAt.getTime() - usage.latencyMs),
+                completedAt,
+                metadata: { userMessageId: current.id },
+              });
+            } catch (error) {
+              console.error("[usage] could not record web search usage", error);
+            }
+          },
+        });
         return { summary };
       } catch (error) {
         const message =

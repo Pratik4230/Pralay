@@ -215,6 +215,7 @@ packages/ai (providers) · packages/agents (LangGraph graphs + tools) — planne
 | Create message body (`@repo/validators/create`) | ✅     | `createProjectMessageBodySchema`                                            |
 | Postgres LangGraph checkpointer                 | ✅     | Separate tables managed by `PostgresSaver.setup()`                          |
 | Image revision history + downloads             | ✅     | Immutable lineage rail, compare, reuse older sources, authenticated download |
+| Generic AI observability + usage accounting    | ✅     | Provider-neutral events and idempotent credits for text, image, tools, and future modalities |
 | Brand kit / templates                           | ⬜     | Deferred                                                                    |
 
 ---
@@ -327,6 +328,25 @@ See `.env.example`. Required for AI slice: `DATABASE_URL`, S3, `OPENAI_API_KEY`,
 6. ~~`packages/agents`: LangGraph Postgres checkpointer.~~ Done.
 7. ~~Edit and resize flows via new turns/tools (not composer scope creep).~~ Done. Uploaded and generated images support AI edits and deterministic resize. Source assets and parent generations are persisted.
 8. ~~Image revision history and downloads.~~ Done. The editor exposes immutable lineage, before/after comparison, older revision reuse, and authenticated image downloads.
+9. ~~Generic AI observability and usage accounting.~~ Done. `@repo/usage` records provider-neutral operations and retry-safe credit debits across text, image, tools, and future modalities.
+
+---
+
+## AI usage integration contract
+
+Every provider-backed feature must use `@repo/usage`. Do not create a feature-specific usage counter.
+
+1. Record one immutable `ai_usage_events` row per completed provider operation.
+2. Use a stable provider request id or durable operation id as `idempotencyKey`.
+3. Set a durable operation name such as `text.chat`, `image.generate`, `audio.transcribe`, `voice.synthesize`, or `video.generate`.
+4. Set the modality to `text`, `image`, `audio`, `video`, `embedding`, `tool`, or `other`.
+5. Store provider/model, latency, trace/request IDs, common token columns, and provider-specific numeric counters in `metrics`.
+6. Successful operations may debit credits. Failed operations record diagnostics with zero credits unless the provider confirms billable usage.
+7. Non-AI processing such as Sharp resize may be recorded for observability with zero credits.
+8. Keep provider currency in `providerCostMicros`; internal product credits are versioned separately by `AI_CREDIT_POLICY_VERSION`.
+9. Add or update credit-policy tests whenever a new modality is introduced.
+
+Historical operations predating metering are backfilled for observability with zero retroactive charges.
 
 ---
 
@@ -338,4 +358,4 @@ See `.env.example`. Required for AI slice: `DATABASE_URL`, S3, `OPENAI_API_KEY`,
 | Create UX (frontend)   | ~65%     |
 | AI backend (Create)    | ~55%     |
 
-**Current focus:** Generation observability and usage accounting, then history gallery.
+**Current focus:** History gallery, then usage diagnostics UI and budget enforcement.

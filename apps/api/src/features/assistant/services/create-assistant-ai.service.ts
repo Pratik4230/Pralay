@@ -7,7 +7,9 @@ import {
   type CreateChatReferenceAsset,
   type CreateChatReferenceCandidate,
 } from "@repo/agents";
+import { randomUUID } from "node:crypto";
 import { hasOpenAiApiKey } from "@repo/env";
+import { recordAiUsage } from "@repo/usage";
 import type {
   CreateChatModelId,
   SendProjectAssistantMessageBody,
@@ -40,10 +42,41 @@ export type CreateAssistantChatContext = {
 
 function buildRunContext(
   chatContext: CreateAssistantChatContext,
+  input: ChatTurnInput,
 ): CreateChatRunContext {
   return {
     toolHandlers: createCreateChatToolHandlers(chatContext),
-    events: chatContext.events,
+    events: {
+      ...chatContext.events,
+      onModelEnd: async (usage) => {
+        await chatContext.events?.onModelEnd?.(usage);
+        const completedAt = new Date();
+        try {
+          await recordAiUsage({
+            idempotencyKey: usage.providerRequestId
+              ? `openai:${usage.providerRequestId}`
+              : `create-chat:${input.runId ?? input.userMessageId ?? randomUUID()}:model:${usage.iteration}`,
+            workspaceId: chatContext.workspaceId,
+            projectId: chatContext.projectId,
+            userId: chatContext.actorUserId,
+            assistantRunId: input.runId ?? null,
+            operation: "text.chat",
+            modality: "text",
+            provider: usage.provider,
+            model: usage.model,
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+            latencyMs: usage.latencyMs,
+            providerRequestId: usage.providerRequestId,
+            startedAt: new Date(completedAt.getTime() - usage.latencyMs),
+            completedAt,
+            metadata: { iteration: usage.iteration },
+          });
+        } catch (error) {
+          console.error("[usage] could not record Create chat usage", error);
+        }
+      },
+    },
   };
 }
 
@@ -88,7 +121,7 @@ export async function generateCreateAssistantReply(
   try {
     return await runCreateChatTurn(
       await withResolvedReferenceAssets(input),
-      buildRunContext(chatContext),
+      buildRunContext(chatContext, input),
     );
   } catch (error) {
     console.error("[create-assistant] chat turn failed", error);
@@ -107,7 +140,7 @@ export async function runCreateAssistantReply(
   if (!hasOpenAiApiKey()) return PLACEHOLDER_NO_OPENAI;
   return runCreateChatTurn(
     await withResolvedReferenceAssets(input),
-    buildRunContext(chatContext),
+    buildRunContext(chatContext, input),
   );
 }
 
@@ -123,7 +156,7 @@ export async function* streamCreateAssistantReply(
   try {
     yield* streamCreateChatTurn(
       await withResolvedReferenceAssets(input),
-      buildRunContext(chatContext),
+      buildRunContext(chatContext, input),
     );
   } catch (error) {
     console.error("[create-assistant] chat stream failed", error);
@@ -133,13 +166,51 @@ export async function* streamCreateAssistantReply(
 
 export async function maybeGenerateCreateThreadTitle(
   userPrompt: string,
+  context?: {
+    workspaceId: string;
+    projectId: string;
+    userId: string;
+    threadId: string;
+  },
 ): Promise<string | null> {
   if (!hasOpenAiApiKey()) {
     return null;
   }
 
   try {
-    return await generateCreateThreadTitle(userPrompt);
+    return await generateCreateThreadTitle(userPrompt, {
+      onUsage: context
+        ? async (usage) => {
+            const completedAt = new Date();
+            try {
+              await recordAiUsage({
+                idempotencyKey: usage.providerRequestId
+                  ? `openai:${usage.providerRequestId}`
+                  : `thread-title:${context.threadId}`,
+                workspaceId: context.workspaceId,
+                projectId: context.projectId,
+                userId: context.userId,
+                operation: "text.thread_title",
+                modality: "text",
+                provider: usage.provider,
+                model: usage.model,
+                inputTokens: usage.inputTokens,
+                outputTokens: usage.outputTokens,
+                latencyMs: usage.latencyMs,
+                providerRequestId: usage.providerRequestId,
+                startedAt: new Date(completedAt.getTime() - usage.latencyMs),
+                completedAt,
+                metadata: { threadId: context.threadId },
+              });
+            } catch (error) {
+              console.error(
+                "[usage] could not record thread title usage",
+                error,
+              );
+            }
+          }
+        : undefined,
+    });
   } catch (error) {
     console.error("[create-assistant] thread title failed", error);
     return null;

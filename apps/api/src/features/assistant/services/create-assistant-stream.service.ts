@@ -67,7 +67,12 @@ export async function completeAssistantTurn(input: {
   const isFirstTurn = messageCount === 1;
   let nextTitle = input.threadRow.title;
   if (isFirstTurn && input.threadRow.titleAuto && !input.threadRow.title) {
-    nextTitle = await maybeGenerateCreateThreadTitle(input.prompt);
+    nextTitle = await maybeGenerateCreateThreadTitle(input.prompt, {
+      workspaceId: input.threadRow.workspaceId,
+      projectId: input.threadRow.projectId,
+      userId: input.threadRow.createdBy,
+      threadId: input.threadRow.id,
+    });
   }
 
   const now = new Date();
