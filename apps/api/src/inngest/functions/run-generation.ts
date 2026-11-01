@@ -1,12 +1,32 @@
 import { NonRetriableError, RetryAfterError } from "inngest";
 
 import { inngest } from "../client.js";
+import { generationChannel } from "../channels.js";
 import { classifyGenerationJobError } from "../../features/generations/services/generation-job-errors.js";
 import {
+  getGenerationForRealtime,
   GenerationNotFoundError,
   markGenerationFailed,
+  markGenerationProcessing,
   runGenerationJob,
 } from "../../features/generations/services/project-generations.service.js";
+
+type GenerationRealtimePayload = Awaited<
+  ReturnType<typeof getGenerationForRealtime>
+>;
+
+async function publishGenerationStatus(
+  generationId: string,
+  generation: GenerationRealtimePayload,
+) {
+  try {
+    await inngest.realtime.publish(generationChannel(generationId).status, {
+      generation,
+    });
+  } catch {
+    // Postgres is authoritative. Clients reconcile once when they reconnect.
+  }
+}
 
 export const runGeneration = inngest.createFunction(
   {
@@ -25,9 +45,11 @@ export const runGeneration = inngest.createFunction(
 
       await step.run("mark-generation-failed", async () => {
         try {
-          await markGenerationFailed(generationId, {
+          const failed = await markGenerationFailed(generationId, {
             eventMessage: "Generation failed after all attempts.",
           });
+          await publishGenerationStatus(generationId, failed);
+          return failed;
         } catch (failureError) {
           if (failureError instanceof GenerationNotFoundError) return;
           throw failureError;
@@ -43,12 +65,37 @@ export const runGeneration = inngest.createFunction(
       );
     }
 
+    const processing = await step.run(
+      `mark-generation-processing-${attempt}`,
+      async () => {
+        const next = await markGenerationProcessing(generationId, attempt);
+        await publishGenerationStatus(generationId, next);
+        return next;
+      },
+    );
+    if (
+      processing.status === "completed" ||
+      processing.status === "cancelled"
+    ) {
+      return processing;
+    }
+
     try {
-      return await step.run("run-generation-job", () =>
-        runGenerationJob(generationId, { attempt }),
-      );
+      return await step.run("run-generation-job", async () => {
+        const completed = await runGenerationJob(generationId, {
+          attempt,
+          processingPrepared: true,
+        });
+        await publishGenerationStatus(generationId, completed);
+        return completed;
+      });
     } catch (error) {
       const jobError = classifyGenerationJobError(error);
+      await step.run(`load-generation-after-attempt-${attempt}`, async () => {
+        const next = await getGenerationForRealtime(generationId);
+        await publishGenerationStatus(generationId, next);
+        return next;
+      });
       if (!jobError.retryable) {
         throw new NonRetriableError(jobError.userMessage, {
           cause: jobError,

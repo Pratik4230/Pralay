@@ -10,11 +10,14 @@ import {
   invalidGenerationInputAssetsError,
   projectNotFoundError,
   retryProjectGenerationResponseSchema,
+  realtimeSubscriptionTokenSchema,
   unauthorizedError,
   workspaceNotFoundError,
 } from "@repo/validators";
 
 import type { AuthVariables } from "../../../global/middleware/session.js";
+import { generationChannel } from "../../../inngest/channels.js";
+import { createRealtimeSubscriptionToken } from "../../../inngest/realtime-token.js";
 import {
   InsufficientCreditsError,
   ProjectBudgetExceededError,
@@ -150,6 +153,42 @@ export async function getProjectGenerationController(
       getProjectGenerationResponseSchema.parse({ generation }),
       200,
     );
+  } catch (error) {
+    if (error instanceof WorkspaceAccessError) {
+      return c.json(workspaceNotFoundError, 404);
+    }
+    if (error instanceof GenerationNotFoundError) {
+      return c.json(generationNotFoundError, 404);
+    }
+    throw error;
+  }
+}
+
+export async function getProjectGenerationRealtimeTokenController(
+  c: Context<{ Variables: AuthVariables }>,
+) {
+  const session = c.get("session");
+  if (!session) return c.json(unauthorizedError, 401);
+
+  const workspaceId = c.req.param("id");
+  const projectId = c.req.param("projectId");
+  const generationId = c.req.param("generationId");
+  if (!workspaceId || !projectId || !generationId) {
+    return c.json(generationNotFoundError, 404);
+  }
+
+  try {
+    await getProjectGeneration(
+      session.user.id,
+      workspaceId,
+      projectId,
+      generationId,
+    );
+    const token = await createRealtimeSubscriptionToken(
+      generationChannel(generationId),
+      ["status"],
+    );
+    return c.json(realtimeSubscriptionTokenSchema.parse(token), 200);
   } catch (error) {
     if (error instanceof WorkspaceAccessError) {
       return c.json(workspaceNotFoundError, 404);

@@ -7,6 +7,7 @@ import {
   listProjectAssistantMessagesResponseSchema,
   listProjectAssistantThreadsResponseSchema,
   listAssistantRunEventsResponseSchema,
+  realtimeSubscriptionTokenSchema,
   mutateAssistantRunResponseSchema,
   sendProjectAssistantMessageResponseSchema,
   submitProjectAssistantMessageResponseSchema,
@@ -56,8 +57,8 @@ export function sendProjectAssistantMessage(
 
 /**
  * Async submit — persists the user message and returns immediately.
- * The agent turn runs in the background; the assistant reply appears
- * later and is picked up via polling GET /messages.
+ * The agent turn runs in the background. The durable run stream reports
+ * progress and completion, followed by one message reconciliation.
  */
 export function submitProjectAssistantMessage(
   workspaceId: string,
@@ -82,6 +83,16 @@ export function fetchProjectAssistantRunEvents(
   return fetchApiClient(
     `/api/v1/workspaces/${workspaceId}/projects/${projectId}/assistant/runs/${runId}/events?after=${afterSequence}`,
   ).then((data) => listAssistantRunEventsResponseSchema.parse(data));
+}
+
+export function fetchProjectAssistantRunRealtimeToken(
+  workspaceId: string,
+  projectId: string,
+  runId: string,
+) {
+  return fetchApiClient(
+    `/api/v1/workspaces/${workspaceId}/projects/${projectId}/assistant/runs/${runId}/realtime-token`,
+  ).then((data) => realtimeSubscriptionTokenSchema.parse(data));
 }
 
 export function cancelProjectAssistantRun(

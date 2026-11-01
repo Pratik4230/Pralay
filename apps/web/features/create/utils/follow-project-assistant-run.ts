@@ -1,6 +1,15 @@
-import type { AssistantRun, AssistantRunEvent } from "@repo/validators";
+import { subscribe } from "inngest/realtime";
 
-import { fetchProjectAssistantRunEvents } from "./fetch-project-assistant";
+import {
+  assistantRunRealtimeEventSchema,
+  type AssistantRun,
+  type AssistantRunEvent,
+} from "@repo/validators";
+
+import {
+  fetchProjectAssistantRunEvents,
+  fetchProjectAssistantRunRealtimeToken,
+} from "./fetch-project-assistant";
 
 export type FollowProjectAssistantRunHandlers = {
   signal?: AbortSignal;
@@ -13,48 +22,64 @@ export type FollowProjectAssistantRunHandlers = {
   onCancelled?: (run: AssistantRun) => void;
 };
 
+type RealtimeSubscription = {
+  close: (reason?: string) => void;
+};
+
 const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
+const EVENT_PAGE_SIZE = 250;
 
-function waitForNextPoll(signal?: AbortSignal, milliseconds = 500) {
-  return new Promise<void>((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(new DOMException("Aborted", "AbortError"));
-      return;
-    }
-    const timeout = window.setTimeout(resolve, milliseconds);
-    signal?.addEventListener(
-      "abort",
-      () => {
-        window.clearTimeout(timeout);
-        reject(new DOMException("Aborted", "AbortError"));
-      },
-      { once: true },
-    );
-  });
-}
-
-export async function followProjectAssistantRun(
+export function followProjectAssistantRun(
   workspaceId: string,
   projectId: string,
   runId: string,
   handlers: FollowProjectAssistantRunHandlers,
 ) {
-  let afterSequence = 0;
-  let fullText = "";
-  let consecutiveFailures = 0;
+  return new Promise<AssistantRun>((resolve, reject) => {
+    let afterSequence = 0;
+    let fullText = "";
+    let stopped = false;
+    let connecting = false;
+    let retryAttempt = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let subscription: RealtimeSubscription | undefined;
+    let reconcilePromise: Promise<void> | undefined;
+    const queuedEvents = new Map<
+      number,
+      { run: AssistantRun; event: AssistantRunEvent }
+    >();
 
-  while (!handlers.signal?.aborted) {
-    try {
-      const result = await fetchProjectAssistantRunEvents(
-        workspaceId,
-        projectId,
-        runId,
-        afterSequence,
-      );
-      consecutiveFailures = 0;
+    const cleanup = (reason: string) => {
+      stopped = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      subscription?.close(reason);
+      handlers.signal?.removeEventListener("abort", handleAbort);
+    };
 
-      for (const event of result.events) {
-        afterSequence = Math.max(afterSequence, event.sequence);
+    const finish = (run: AssistantRun, failureMessage?: string) => {
+      if (stopped) return;
+      if (run.status === "completed") handlers.onCompleted?.(run);
+      else if (run.status === "failed") {
+        handlers.onFailed?.(
+          failureMessage ?? run.errorMessage ?? "The assistant run failed.",
+          run,
+        );
+      } else if (run.status === "cancelled") handlers.onCancelled?.(run);
+      cleanup("assistant run completed");
+      resolve(run);
+    };
+
+    const applyEvents = (
+      run: AssistantRun,
+      events: readonly AssistantRunEvent[],
+      allowTerminal = true,
+    ) => {
+      let failureMessage: string | undefined;
+      for (const event of [...events].sort(
+        (left, right) => left.sequence - right.sequence,
+      )) {
+        if (event.sequence <= afterSequence) continue;
+        afterSequence = event.sequence;
         switch (event.type) {
           case "reset":
             fullText = "";
@@ -78,59 +103,131 @@ export async function followProjectAssistantRun(
             break;
           case "failed": {
             const message = event.payload.message;
-            handlers.onFailed?.(
-              typeof message === "string"
-                ? message
-                : "The assistant run failed.",
-              result.run,
-            );
+            if (typeof message === "string") failureMessage = message;
             break;
           }
-          case "cancelled":
-            handlers.onCancelled?.(result.run);
-            break;
           case "completed":
+          case "cancelled":
           case "status":
             break;
         }
       }
 
-      // Drain every persisted event before honoring the terminal run state.
-      // The API pages at 250 events, so a reconnect cannot skip late deltas.
-      if (
-        TERMINAL_STATUSES.has(result.run.status) &&
-        result.events.length < 250
-      ) {
-        if (result.run.status === "completed") {
-          handlers.onCompleted?.(result.run);
-        } else if (
-          result.run.status === "failed" &&
-          result.events.length === 0
-        ) {
-          handlers.onFailed?.(
-            result.run.errorMessage ?? "The assistant run failed.",
-            result.run,
-          );
-        } else if (
-          result.run.status === "cancelled" &&
-          result.events.length === 0
-        ) {
-          handlers.onCancelled?.(result.run);
-        }
-        return result.run;
+      if (allowTerminal && TERMINAL_STATUSES.has(run.status)) {
+        finish(run, failureMessage);
       }
+    };
 
-      await waitForNextPoll(handlers.signal);
-    } catch (error) {
-      if (handlers.signal?.aborted) throw error;
-      consecutiveFailures += 1;
-      if (consecutiveFailures >= 5) throw error;
-      await waitForNextPoll(
-        handlers.signal,
-        Math.min(4_000, 500 * 2 ** consecutiveFailures),
-      );
+    const reconcile = () => {
+      if (reconcilePromise) return reconcilePromise;
+      reconcilePromise = (async () => {
+        let latestRun: AssistantRun | undefined;
+        while (!stopped) {
+          const result = await fetchProjectAssistantRunEvents(
+            workspaceId,
+            projectId,
+            runId,
+            afterSequence,
+          );
+          latestRun = result.run;
+          applyEvents(
+            result.run,
+            result.events,
+            result.events.length < EVENT_PAGE_SIZE,
+          );
+          if (stopped || result.events.length < EVENT_PAGE_SIZE) break;
+        }
+
+        if (stopped) return;
+        const queued = [...queuedEvents.values()].sort(
+          (left, right) => left.event.sequence - right.event.sequence,
+        );
+        queuedEvents.clear();
+        for (const payload of queued) {
+          applyEvents(payload.run, [payload.event]);
+          if (stopped) return;
+          latestRun = payload.run;
+        }
+
+        if (latestRun && TERMINAL_STATUSES.has(latestRun.status)) {
+          finish(latestRun);
+        }
+      })().finally(() => {
+        reconcilePromise = undefined;
+      });
+      return reconcilePromise;
+    };
+
+    const scheduleReconnect = () => {
+      if (stopped || retryTimer) return;
+      const delay = Math.min(30_000, 1_000 * 2 ** retryAttempt);
+      retryAttempt += 1;
+      retryTimer = setTimeout(() => {
+        retryTimer = undefined;
+        void connect();
+      }, delay);
+    };
+
+    const connect = async () => {
+      if (stopped || connecting) return;
+      connecting = true;
+      try {
+        const token = await fetchProjectAssistantRunRealtimeToken(
+          workspaceId,
+          projectId,
+          runId,
+        );
+        const nextSubscription = await subscribe({
+          channel: token.channel,
+          topics: token.topics,
+          key: token.key,
+          ...(token.apiBaseUrl ? { apiBaseUrl: token.apiBaseUrl } : {}),
+          onMessage: (message: { data: unknown }) => {
+            const payload = assistantRunRealtimeEventSchema.safeParse(
+              message.data,
+            );
+            if (!payload.success || stopped) return;
+            if (reconcilePromise) {
+              queuedEvents.set(payload.data.event.sequence, payload.data);
+              return;
+            }
+            applyEvents(payload.data.run, [payload.data.event]);
+          },
+          onError: () => {
+            subscription?.close("reconnecting");
+            subscription = undefined;
+            scheduleReconnect();
+          },
+        });
+        if (stopped) {
+          nextSubscription.close("assistant run completed");
+          return;
+        }
+        subscription = nextSubscription;
+        retryAttempt = 0;
+        await reconcile();
+      } catch (error) {
+        if (!stopped) scheduleReconnect();
+        if (handlers.signal?.aborted) {
+          cleanup("aborted");
+          reject(error);
+        }
+      } finally {
+        connecting = false;
+      }
+    };
+
+    function handleAbort() {
+      if (stopped) return;
+      cleanup("aborted");
+      reject(new DOMException("Aborted", "AbortError"));
     }
-  }
 
-  throw new DOMException("Aborted", "AbortError");
+    if (handlers.signal?.aborted) {
+      handleAbort();
+      return;
+    }
+    handlers.signal?.addEventListener("abort", handleAbort, { once: true });
+    void connect();
+  });
 }

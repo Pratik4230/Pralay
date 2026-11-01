@@ -146,7 +146,8 @@ function buildChatContext(
  * Flow:
  *   meta  →  [generation?]  →  text chunks (fast)  →  done
  *
- * Generation status is polled independently by the client via React Query.
+ * Generation status is delivered through an authorized Inngest Realtime
+ * channel and reconciled from Postgres when the client reconnects.
  */
 export async function* iterateProjectAssistantMessageStream(
   actorUserId: string,

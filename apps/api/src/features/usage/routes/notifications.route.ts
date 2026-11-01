@@ -5,6 +5,7 @@ import {
   apiErrorSchema,
   notificationListResponseSchema,
   notificationMutationResponseSchema,
+  realtimeSubscriptionTokenSchema,
 } from "@repo/validators";
 
 const mutationResponses = {
@@ -35,6 +36,22 @@ export const listNotificationsRoute = createRoute({
       description: "Notifications",
       content: {
         "application/json": { schema: notificationListResponseSchema },
+      },
+    },
+    401: mutationResponses[401],
+  },
+});
+
+export const getNotificationsRealtimeTokenRoute = createRoute({
+  method: "get",
+  path: "/api/v1/notifications/realtime-token",
+  tags: ["Notifications"],
+  summary: "Create an authorized realtime notification subscription",
+  responses: {
+    200: {
+      description: "Short-lived realtime subscription token",
+      content: {
+        "application/json": { schema: realtimeSubscriptionTokenSchema },
       },
     },
     401: mutationResponses[401],

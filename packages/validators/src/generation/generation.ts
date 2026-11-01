@@ -144,6 +144,17 @@ export const retryProjectGenerationResponseSchema = z.object({
   generation: generationSchema,
 });
 
+export const generationRealtimeEventSchema = z.object({
+  generation: generationSchema,
+});
+
+export const realtimeSubscriptionTokenSchema = z.object({
+  key: z.string().min(1),
+  apiBaseUrl: z.string().url().optional(),
+  channel: z.string().min(1),
+  topics: z.array(z.string().min(1)).min(1),
+});
+
 export const generationNotFoundError = createApiError(
   "NOT_FOUND",
   "Generation not found",
@@ -160,6 +171,9 @@ export const generationNotRetryableError = createApiError(
 );
 
 export type Generation = z.infer<typeof generationSchema>;
+export type RealtimeSubscriptionToken = z.infer<
+  typeof realtimeSubscriptionTokenSchema
+>;
 export type GenerationHistoryRevision = z.infer<
   typeof generationHistoryRevisionSchema
 >;

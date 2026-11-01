@@ -1,6 +1,11 @@
+@import "@fontsource-variable/inter/wght.css";
 @import "@repo/ui/globals.css";
 
 @source "../features/**/*.{ts,tsx}";
 @source "../global/**/*.{ts,tsx}";
 @source "./**/*.{ts,tsx}";
 @source "../../../packages/ui/src/**/*.{ts,tsx}";
+
+:root {
+  --font-inter: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+}

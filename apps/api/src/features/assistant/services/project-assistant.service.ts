@@ -505,7 +505,7 @@ export async function sendProjectAssistantMessage(
 }
 
 // ---------------------------------------------------------------------------
-// Submit + Poll pattern (production)
+// Submit + durable run stream pattern (production)
 // ---------------------------------------------------------------------------
 
 const TOOL_PROGRESS: Record<string, string> = {
@@ -519,8 +519,8 @@ const TOOL_PROGRESS: Record<string, string> = {
 /**
  * Runs the full agent turn in the background after the user message has been
  * persisted. On success: persists assistant reply + optional thread title.
- * On failure: persists an error assistant message so the client always gets
- * a response via polling.
+ * On failure: persists an error assistant message so reconnecting clients can
+ * reconcile the final response from Postgres.
  *
  * Provider failures are allowed to throw so Inngest can retry the turn.
  */
@@ -666,8 +666,8 @@ export async function processProjectAssistantTurn(params: {
 
 /**
  * Async submit: persists the user message, fires the agent turn in the
- * background, and returns immediately. The assistant reply appears later
- * and is picked up by the client via polling GET /messages.
+ * background, and returns immediately. The durable run stream reports the
+ * result, then the client reconciles messages once from Postgres.
  */
 export async function submitProjectAssistantMessage(
   actorUserId: string,

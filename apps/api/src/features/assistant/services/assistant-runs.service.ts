@@ -9,6 +9,8 @@ import {
 } from "@repo/db/schema";
 import type { SendProjectAssistantMessageBody } from "@repo/validators";
 
+import { assistantRunChannel } from "../../../inngest/channels.js";
+import { inngest } from "../../../inngest/client.js";
 import {
   ProjectNotFoundError,
   getWorkspaceProject,
@@ -65,7 +67,7 @@ export async function appendAssistantRunEvent(
   type: AssistantRunEventType,
   payload: Record<string, unknown> = {},
 ) {
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const [run] = await tx
       .update(assistantRuns)
       .set({
@@ -73,7 +75,7 @@ export async function appendAssistantRunEvent(
         updatedAt: new Date(),
       })
       .where(eq(assistantRuns.id, runId))
-      .returning({ nextEventSequence: assistantRuns.nextEventSequence });
+      .returning();
 
     if (!run) throw new AssistantRunNotFoundError();
 
@@ -88,8 +90,19 @@ export async function appendAssistantRunEvent(
       .returning();
 
     if (!event) throw new Error("Failed to append assistant run event");
-    return event;
+    return { run, event };
   });
+
+  try {
+    await inngest.realtime.publish(assistantRunChannel(runId).event, {
+      run: mapAssistantRun(result.run),
+      event: mapAssistantRunEvent(result.event),
+    });
+  } catch {
+    // Postgres is authoritative. The subscriber reconciles after connecting.
+  }
+
+  return result.event;
 }
 
 export async function getAssistantRunById(runId: string) {
@@ -127,6 +140,22 @@ async function requireProjectAssistantRun(
 
   if (!row) throw new AssistantRunNotFoundError();
   return row.run;
+}
+
+export async function getProjectAssistantRun(
+  actorUserId: string,
+  workspaceId: string,
+  projectId: string,
+  runId: string,
+) {
+  return mapAssistantRun(
+    await requireProjectAssistantRun(
+      actorUserId,
+      workspaceId,
+      projectId,
+      runId,
+    ),
+  );
 }
 
 export async function listProjectAssistantRunEvents(

@@ -12,6 +12,7 @@ import {
   listAssistantRunEventsQuerySchema,
   listAssistantRunEventsResponseSchema,
   mutateAssistantRunResponseSchema,
+  realtimeSubscriptionTokenSchema,
   listProjectAssistantThreadsResponseSchema,
   projectNotFoundError,
   sendProjectAssistantMessageBodySchema,
@@ -38,10 +39,13 @@ import {
   AssistantRunNotFoundError,
   cancelProjectAssistantRun,
   listProjectAssistantRunEvents,
+  getProjectAssistantRun,
   mapAssistantRun,
   retryProjectAssistantRun,
 } from "../services/assistant-runs.service.js";
 import { inngest } from "../../../inngest/client.js";
+import { assistantRunChannel } from "../../../inngest/channels.js";
+import { createRealtimeSubscriptionToken } from "../../../inngest/realtime-token.js";
 import { ProjectNotFoundError } from "../../projects/services/workspace-projects.service.js";
 import {
   WorkspaceAccessError,
@@ -349,6 +353,41 @@ export async function listProjectAssistantRunEventsController(
       query.after,
     );
     return c.json(listAssistantRunEventsResponseSchema.parse(result), 200);
+  } catch (error) {
+    if (
+      error instanceof AssistantRunNotFoundError ||
+      error instanceof ProjectNotFoundError ||
+      error instanceof WorkspaceAccessError
+    ) {
+      return c.json(assistantRunNotFoundError, 404);
+    }
+    throw error;
+  }
+}
+
+export async function getProjectAssistantRunRealtimeTokenController(
+  c: Context<{ Variables: AuthVariables }>,
+) {
+  const session = c.get("session");
+  if (!session) return c.json(unauthorizedError, 401);
+  const { workspaceId, projectId } = workspaceProjectParams(c);
+  const runId = c.req.param("runId");
+  if (!workspaceId || !projectId || !runId) {
+    return c.json(assistantRunNotFoundError, 404);
+  }
+
+  try {
+    await getProjectAssistantRun(
+      session.user.id,
+      workspaceId,
+      projectId,
+      runId,
+    );
+    const token = await createRealtimeSubscriptionToken(
+      assistantRunChannel(runId),
+      ["event"],
+    );
+    return c.json(realtimeSubscriptionTokenSchema.parse(token), 200);
   } catch (error) {
     if (
       error instanceof AssistantRunNotFoundError ||

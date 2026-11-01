@@ -7,10 +7,10 @@ https://docs.langchain.com/llms.txt
 Images.md
 pralay-image-studio-spec.md
 
-Credentials: email: pratikjadhav1438@gmail.com password: Pratik@*777
+Do not store login credentials or provider secrets in this file. Use the approved local secret store or environment configuration for test accounts.
 
 > Multi-workspace AI creative platform. **Conversational Create + asset references first**, video later.
-> Last updated: 2026-09-30
+> Last updated: 2026-11-01
 
 This file is the source of truth for humans and coding agents working on Pralay.
 
@@ -138,7 +138,7 @@ SES              → Transactional email
 ```text
 apps/web · apps/api · apps/inngest · apps/jobs
 packages/db · packages/auth · packages/storage · packages/email · packages/validators · packages/ui
-packages/ai (providers) · packages/agents (LangGraph graphs + tools) — planned
+packages/ai (providers) · packages/agents (LangGraph graphs + tools) — active
 ```
 
 **Backend:** Hono · Better Auth · Drizzle · REST `/api/v1`
@@ -200,35 +200,79 @@ packages/ai (providers) · packages/agents (LangGraph graphs + tools) — planne
 
 ## Phase 2 — AI foundation (current focus)
 
-| Item                                            | Status | Notes                                                                       |
-| ----------------------------------------------- | ------ | --------------------------------------------------------------------------- |
-| `assistant_threads` / `assistant_messages`      | ✅     | Create threads + messages API                                               |
-| Durable assistant runs + streaming              | ✅     | Persisted ordered events, real model deltas, reconnect, cancel, retry       |
-| `packages/agents` LangGraph + tools             | ✅     | Model and per-tool nodes with Postgres checkpoint resume                    |
-| OpenAI `gpt-5.6-luna` chat stream + titles      | ✅     | Stream route + thread titles                                                |
-| `packages/ai` Grok Imagine adapter              | 🟡     | Inngest worker path                                                         |
-| Generations API + Inngest                       | 🟡     | Retry-safe jobs, final failure handling, manual retry; polish observability |
-| `@` asset suggest API                           | ✅     | `GET .../assets/suggest`                                                    |
-| Assistant UI + Zustand Create store             | 🟡     | External store runtime; staged `@` refs only                                |
-| **`WorkspaceAssetsUploadDialog`**               | ✅     | Create + Project Assets + Workspace Library                                 |
-| Env: `XAI_API_KEY`, `OPENAI_API_KEY`, Inngest   | 🟡     | Keys in `.env.example`; `@repo/env` `aiEnv` / getters; Inngest TBD          |
-| Create message body (`@repo/validators/create`) | ✅     | `createProjectMessageBodySchema`                                            |
-| Postgres LangGraph checkpointer                 | ✅     | Separate tables managed by `PostgresSaver.setup()`                          |
-| Image revision history + downloads             | ✅     | Immutable lineage rail, compare, reuse older sources, authenticated download |
-| Generic AI observability + usage accounting    | ✅     | Provider-neutral events and idempotent credits for text, image, tools, and future modalities |
-| AI usage dashboard + budget enforcement        | ✅     | Workspace and project limits, atomic reservations, owner adjustments, durable alerts, and notifications |
-| Brand kit / templates                           | ⬜     | Deferred                                                                    |
+| Item                                            | Status | Notes                                                                                                   |
+| ----------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------- |
+| `assistant_threads` / `assistant_messages`      | ✅     | Create threads + messages API                                                                           |
+| Durable assistant runs + streaming              | ✅     | Persisted ordered events, real model deltas, reconnect, cancel, retry                                   |
+| `packages/agents` LangGraph + tools             | ✅     | Model and per-tool nodes with Postgres checkpoint resume                                                |
+| OpenAI `gpt-5.6-luna` chat stream + titles      | ✅     | Stream route + thread titles                                                                            |
+| `packages/ai` Grok Imagine adapter              | 🟡     | Generate/edit adapter is wired; live provider and storage E2E still needs a current production-like run |
+| Generations API + Inngest                       | 🟡     | Retry-safe jobs, final failure handling, manual retry, and realtime status delivery; live E2E pending   |
+| `@` asset suggest API                           | ✅     | `GET .../assets/suggest`                                                                                |
+| Assistant UI + Zustand Create store             | 🟡     | External store runtime; staged `@` refs only                                                            |
+| **`WorkspaceAssetsUploadDialog`**               | ✅     | Create + Project Assets + Workspace Library                                                             |
+| Env: `XAI_API_KEY`, `OPENAI_API_KEY`, Inngest   | 🟡     | Keys are documented and Inngest is wired; deployment secrets and live connectivity are not verified     |
+| Create message body (`@repo/validators/create`) | ✅     | `createProjectMessageBodySchema`                                                                        |
+| Postgres LangGraph checkpointer                 | ✅     | Separate tables managed by `PostgresSaver.setup()`                                                      |
+| Image revision history + downloads              | ✅     | Immutable lineage rail, compare, reuse older sources, authenticated download                            |
+| Generic AI observability + usage accounting     | ✅     | Provider-neutral events and idempotent credits for text, image, tools, and future modalities            |
+| AI usage dashboard + budget enforcement         | ✅     | Workspace and project limits, atomic reservations, owner adjustments, durable alerts, and notifications |
+| Collections                                     | 🟡     | Tables and default collection exist; CRUD API and product UI are still missing                          |
+| Brand kit / presets / templates                 | 🟡     | Database schema exists; API, UI, Create grounding, and lifecycle rules are still missing                |
+
+---
+
+## Repository audit — 2026-11-01
+
+This section distinguishes code that exists from behavior that has been verified. A feature is only ✅ when its main product path is implemented and there is current test or end-to-end evidence. Schema-only work is 🟡 or ⬜, not complete.
+
+### Done now
+
+| Area                   | Evidence in the repository                                                                                                                                                                                                   |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Foundation             | Bun/Turborepo workspace, Next.js web app, Hono API, Better Auth, Drizzle/Postgres schema and migrations, Redis/Postgres compose file, OpenAPI registration                                                                   |
+| Workspace product      | Workspace CRUD, members, invites, settings, projects, covers/avatars, library/project assets, presigned uploads, scoped media access, and trash/restore flows                                                                |
+| Create conversation    | Assistant UI external runtime, per-project threads, Zustand draft/staged references, caret-aware `@` picker, persistent messages, cancel/retry, and thread reload                                                            |
+| Durable orchestration  | Inngest assistant runs, LangGraph model/tool graph, Postgres checkpoints keyed by assistant run, ordered persisted run events, and authorized realtime delivery with reconnect reconciliation                                |
+| Image workflow         | Grok Imagine generation/edit adapter, generation jobs and retry classification, source/reference selection, AI edit, deterministic resize, immutable lineage/history, authenticated downloads, and project asset persistence |
+| Usage controls         | Provider-neutral usage events, idempotent credit debits, atomic reservations, project/workspace budgets, owner adjustments, alerts, notifications, and realtime notification delivery                                        |
+| Build quality baseline | Root lint and type-check pass; Inter is self-hosted through `@fontsource-variable/inter`; the web production build completes with webpack without a Google Fonts request                                                     |
+
+### Needs improvement before calling the app production-ready
+
+| Priority | Improvement                                    | Current evidence / reason                                                                                                                                                                                                                                                |
+| -------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| P0       | Make the verification baseline reproducible    | `bun run check-types` passes. `bun test --ignore='**/node_modules/**'` currently reports 50 pass and 7 database integration failures because PostgreSQL is unavailable. Docker Desktop was not running, so the integration suite could not be revalidated in this audit. |
+| P0       | Run a real provider/storage/browser smoke test | Revalidate login, asset upload, `@` selection, chat/tool execution, generation, realtime status, edit, resize, download, retry, reload, usage debit, and budget rejection with Postgres, S3, OpenAI, xAI, and Inngest configured.                                        |
+| P0       | Add CI                                         | No checked-in CI workflow currently enforces install, type-check, lint, unit tests, database integration tests, migration/checkpointer setup, and production build.                                                                                                      |
+| P1       | Expand frontend test coverage                  | Current tests cover stream/event utilities but not the actual mention picker, composer send behavior, thread selector, generation cards, editor dialog, responsive layout, accessibility, or reconnect UI. Add component tests and browser E2E.                          |
+| P1       | Remove stale documentation                     | The root `README.md` is still the Turborepo starter, and the send-message OpenAPI description still says LangGraph streaming is not wired. Replace both with current setup and API behavior.                                                                             |
+| P1       | Harden operations                              | Add deployed health/readiness checks for Postgres, storage, OpenAI, xAI, Inngest signing, and checkpoint setup; add structured logs, trace correlation, alarms, backup/restore procedures, and failure runbooks.                                                         |
+| P1       | Review security and abuse controls             | Complete rate limits, upload/content validation, provider timeout limits, secret rotation, audit coverage, authorization regression tests, and media URL/cache policy review before public launch.                                                                       |
+| P2       | Polish Create UX                               | Validate mobile layout, keyboard-only `@` selection, empty/error states, optimistic/retry behavior, long threads, multi-tab behavior, generation progress copy, and accessible image history/compare interactions.                                                       |
+
+### Remaining product work
+
+| Priority | Product work                    | Scope                                                                                                                                                                             |
+| -------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P1       | Collections                     | CRUD API, collection membership, library/project UI, permissions, trash semantics, and using collections in Create context                                                        |
+| P1       | Brand kits                      | Workspace brand settings, colors/fonts/tone/assets UI and API, authorization, and injection into Create generation context                                                        |
+| P1       | Presets and templates           | System/workspace presets, template CRUD/gallery/apply flows, asset/reference rules, and Create integration                                                                        |
+| P1       | Production deployment           | Final AWS/Amplify/API Gateway/Lambda/EC2/S3/CloudFront/SES configuration, migrations, secrets, CI/CD, rollback, backups, and staging environment                                  |
+| P2       | Batch generation                | Product contract, API/tool support, fan-out jobs, aggregate progress, cancellation/retry, cost reservation, and results UI; current schema fields alone are not an implementation |
+| P2       | Full editor and history gallery | Current dialog supports AI edit and resize. A richer canvas/layout editor and standalone history/gallery experience remain future work if still in scope.                         |
+| P3       | Video                           | Provider abstraction, durable workflow, storage/transcoding, metering, and UI after image workflows are production-stable                                                         |
 
 ---
 
 ## Phase 3+ (abbreviated)
 
-| Phase | Focus                                  |
-| ----- | -------------------------------------- |
-| 3     | Editor, resize, history gallery        |
-| 4     | Batch, usage/credits, presets UI       |
-| 5     | Production hardening, Terraform, CI/CD |
-| 6     | Video pipeline (post-image stability)  |
+| Phase | Focus                                                                 |
+| ----- | --------------------------------------------------------------------- |
+| 3     | Collections, brand kits, presets/templates, and Create UX hardening   |
+| 4     | Batch generation plus richer editor and standalone history/gallery UX |
+| 5     | Production infrastructure, security hardening, CI/CD, and operations  |
+| 6     | Video pipeline after image workflows are production-stable            |
 
 ---
 
@@ -297,17 +341,17 @@ See `.env.example`. Required for AI slice: `DATABASE_URL`, S3, `OPENAI_API_KEY`,
 | LangGraph runtime adapter | Optional swap from external store when graph is primary |
 | Edit/resize turns         | Extend send contract, not composer uploads              |
 
-### Planned — backend / workers
+### Installed — backend / workers
 
-| Package / app                                            | Purpose                                                         |
-| -------------------------------------------------------- | --------------------------------------------------------------- |
-| `@langchain/langgraph`                                   | Graph orchestration                                             |
-| `@langchain/core`                                        | Messages, tools                                                 |
-| `@langchain/openai`                                      | `gpt-5.6-luna`                                                  |
-| `@langchain/langgraph-checkpoint-postgres`               | Graph checkpoints                                               |
-| `@langchain/google-genai` or xAI client in `packages/ai` | Grok Imagine (v1 images)                                        |
-| `inngest`                                                | Async generation worker (`apps/inngest` or Hono route)          |
-| **New workspace packages**                               | `@repo/agents` (graphs + tools), `@repo/ai` (provider adapters) |
+| Package / app                              | Purpose                                                         |
+| ------------------------------------------ | --------------------------------------------------------------- |
+| `@langchain/langgraph`                     | Graph orchestration                                             |
+| `@langchain/core`                          | Messages, tools                                                 |
+| `@langchain/openai`                        | `gpt-5.6-luna`                                                  |
+| `@langchain/langgraph-checkpoint-postgres` | Graph checkpoints                                               |
+| xAI client in `packages/ai`                | Grok Imagine image generation and editing                       |
+| `inngest`                                  | Assistant, generation, usage, cleanup, and realtime workflows   |
+| Workspace packages                         | `@repo/agents` (graphs + tools), `@repo/ai` (provider adapters) |
 
 ### Not planned for v1
 
@@ -331,6 +375,7 @@ See `.env.example`. Required for AI slice: `DATABASE_URL`, S3, `OPENAI_API_KEY`,
 8. ~~Image revision history and downloads.~~ Done. The editor exposes immutable lineage, before/after comparison, older revision reuse, and authenticated image downloads.
 9. ~~Generic AI observability and usage accounting.~~ Done. `@repo/usage` records provider-neutral operations and retry-safe credit debits across text, image, tools, and future modalities.
 10. ~~AI usage dashboard, budget enforcement, alerts, and credit administration.~~ Done. Workspace and project budgets reserve atomically, owner adjustments are audited and idempotent, and durable monitors deliver deduplicated in-app and email alerts.
+11. ~~Realtime generation status and notifications.~~ Done. Authorized Inngest Realtime channels replace recurring generation and notification polling, with Postgres reconciliation on connection and reconnect.
 
 ---
 
@@ -354,10 +399,14 @@ Historical operations predating metering are backfilled for observability with z
 
 ## Progress summary
 
-| Area                   | Progress |
-| ---------------------- | -------- |
-| Foundation + workspace | ~90%     |
-| Create UX (frontend)   | ~65%     |
-| AI backend (Create)    | ~55%     |
+| Area                               | Progress |
+| ---------------------------------- | -------- |
+| Foundation + workspace core        | ~85%     |
+| Create UX for the current v1 loop  | ~80%     |
+| AI backend for the current v1 loop | ~80%     |
+| Product expansion                  | ~20%     |
+| Production readiness               | ~35%     |
 
-**Current focus:** Production hardening for image workflows, then brand kits and templates.
+These percentages are directional planning estimates, not test coverage measurements.
+
+**Current focus:** Restore a green local/CI verification baseline, complete a production-like image workflow smoke test, then build collections, brand kits, and presets/templates.

@@ -19,6 +19,12 @@ export const nextJsConfig = [
     "next-env.d.ts",
   ]),
   {
+    files: ["**/*.config.{js,mjs,cjs,ts,mts,cts}"],
+    languageOptions: {
+      globals: globals.node,
+    },
+  },
+  {
     languageOptions: {
       globals: {
         ...globals.browser,

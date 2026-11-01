@@ -9,6 +9,7 @@ import {
   streamProjectAssistantMessageController,
   submitProjectAssistantMessageController,
   listProjectAssistantRunEventsController,
+  getProjectAssistantRunRealtimeTokenController,
   retryProjectAssistantRunController,
 } from "./controllers/project-assistant.controller.js";
 import {
@@ -51,6 +52,10 @@ export function registerAssistantFeature(app: ApiApp) {
   app.get(
     "/api/v1/workspaces/:id/projects/:projectId/assistant/runs/:runId/events",
     listProjectAssistantRunEventsController,
+  );
+  app.get(
+    "/api/v1/workspaces/:id/projects/:projectId/assistant/runs/:runId/realtime-token",
+    getProjectAssistantRunRealtimeTokenController,
   );
   app.post(
     "/api/v1/workspaces/:id/projects/:projectId/assistant/runs/:runId/cancel",

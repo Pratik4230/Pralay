@@ -90,6 +90,11 @@ export const assistantRunEventSchema = z.object({
   createdAt: z.string(),
 });
 
+export const assistantRunRealtimeEventSchema = z.object({
+  run: assistantRunSchema,
+  event: assistantRunEventSchema,
+});
+
 export const listAssistantRunEventsQuerySchema = z.object({
   after: z.coerce.number().int().nonnegative().default(0),
 });
@@ -145,8 +150,8 @@ export const sendProjectAssistantMessageResponseSchema = z.object({
 });
 
 /**
- * Async submit: returns user message immediately; assistant reply arrives
- * later and is picked up by polling GET /messages.
+ * Async submit: returns the user message immediately. The durable run stream
+ * reports progress and completion, followed by one message reconciliation.
  */
 export const submitProjectAssistantMessageResponseSchema = z.object({
   thread: assistantThreadSchema,

@@ -492,37 +492,37 @@ export async function insertQueuedProjectGeneration(
   let generation: GenerationRow;
   try {
     generation = await db.transaction(async (tx) => {
-    const [created] = await tx
-      .insert(generations)
-      .values({
-        id: generationId,
-        workspaceId: input.workspaceId,
-        projectId: input.projectId,
-        createdBy: input.createdBy,
-        type: generationType,
-        parentGenerationId,
+      const [created] = await tx
+        .insert(generations)
+        .values({
+          id: generationId,
+          workspaceId: input.workspaceId,
+          projectId: input.projectId,
+          createdBy: input.createdBy,
+          type: generationType,
+          parentGenerationId,
+          status: "queued",
+          prompt: input.prompt,
+          inputAssetIds,
+          aspectRatio: input.aspectRatio ?? null,
+          referenceRoles,
+          provider: defaults.provider,
+          model: defaults.model,
+          width: input.width ?? null,
+          height: input.height ?? null,
+          variationCount: 1,
+        })
+        .returning();
+
+      if (!created) {
+        throw new Error("Failed to create generation");
+      }
+
+      await tx.insert(generationEvents).values({
+        generationId: created.id,
         status: "queued",
-        prompt: input.prompt,
-        inputAssetIds,
-        aspectRatio: input.aspectRatio ?? null,
-        referenceRoles,
-        provider: defaults.provider,
-        model: defaults.model,
-        width: input.width ?? null,
-        height: input.height ?? null,
-        variationCount: 1,
-      })
-      .returning();
-
-    if (!created) {
-      throw new Error("Failed to create generation");
-    }
-
-    await tx.insert(generationEvents).values({
-      generationId: created.id,
-      status: "queued",
-      message: "Generation queued",
-    });
+        message: "Generation queued",
+      });
 
       return created;
     });
@@ -977,11 +977,73 @@ export async function markGenerationFailed(
   return mapGenerationWithOutputs(failed);
 }
 
-export async function runGenerationJob(
+async function transitionGenerationToProcessing(
+  row: GenerationRow,
+  attempt: number,
+) {
+  const startedAt = new Date();
+  const [processing] = await db
+    .update(generations)
+    .set({
+      status: "processing",
+      startedAt: row.startedAt ?? startedAt,
+      updatedAt: startedAt,
+      errorCode: null,
+      errorMessage: null,
+      ...(attempt > 0
+        ? {
+            retryCount: sql`greatest(${generations.retryCount}, ${attempt})`,
+          }
+        : {}),
+    })
+    .where(eq(generations.id, row.id))
+    .returning();
+  if (!processing) throw new GenerationNotFoundError();
+
+  const attemptNumber = processing.retryCount + 1;
+  await recordGenerationEvent(
+    row.id,
+    "processing",
+    `Generation attempt ${attemptNumber} started`,
+  );
+  return processing;
+}
+
+export async function markGenerationProcessing(
   generationId: string,
-  options: { attempt?: number } = {},
+  attempt = 0,
 ) {
   const [row] = await db
+    .select()
+    .from(generations)
+    .where(and(eq(generations.id, generationId), isNull(generations.deletedAt)))
+    .limit(1);
+  if (!row) throw new GenerationNotFoundError();
+  if (row.status === "completed" || row.status === "cancelled") {
+    return mapGenerationWithOutputs(row);
+  }
+  const processing = await transitionGenerationToProcessing(
+    row,
+    Math.max(0, attempt),
+  );
+  return mapGenerationWithOutputs(processing);
+}
+
+export async function getGenerationForRealtime(generationId: string) {
+  const [row] = await db
+    .select()
+    .from(generations)
+    .where(and(eq(generations.id, generationId), isNull(generations.deletedAt)))
+    .limit(1);
+  if (!row) throw new GenerationNotFoundError();
+  return mapGenerationWithOutputs(row);
+}
+
+export async function runGenerationJob(
+  generationId: string,
+  options: { attempt?: number; processingPrepared?: boolean } = {},
+) {
+  let [row] = await db
     .select()
     .from(generations)
     .where(and(eq(generations.id, generationId), isNull(generations.deletedAt)))
@@ -1000,31 +1062,10 @@ export async function runGenerationJob(
   }
 
   const attempt = Math.max(0, options.attempt ?? 0);
-  const startedAt = new Date();
-
-  const [processing] = await db
-    .update(generations)
-    .set({
-      status: "processing",
-      startedAt: row.startedAt ?? startedAt,
-      updatedAt: startedAt,
-      errorCode: null,
-      errorMessage: null,
-      ...(attempt > 0
-        ? {
-            retryCount: sql`greatest(${generations.retryCount}, ${attempt})`,
-          }
-        : {}),
-    })
-    .where(eq(generations.id, generationId))
-    .returning();
-
-  const attemptNumber = (processing?.retryCount ?? row.retryCount) + 1;
-  await recordGenerationEvent(
-    generationId,
-    "processing",
-    `Generation attempt ${attemptNumber} started`,
-  );
+  if (!options.processingPrepared) {
+    row = await transitionGenerationToProcessing(row, attempt);
+  }
+  const attemptNumber = row.retryCount + 1;
 
   try {
     if (!isStorageConfigured()) {

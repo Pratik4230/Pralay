@@ -13,6 +13,7 @@ import {
 } from "./controllers/ai-usage-admin.controller.js";
 import {
   listNotificationsController,
+  getNotificationsRealtimeTokenController,
   markAllNotificationsReadController,
   markNotificationReadController,
 } from "./controllers/notifications.controller.js";
@@ -22,6 +23,7 @@ import {
 } from "./routes/ai-usage-admin.route.js";
 import {
   listNotificationsRoute,
+  getNotificationsRealtimeTokenRoute,
   markAllNotificationsReadRoute,
   markNotificationReadRoute,
 } from "./routes/notifications.route.js";
@@ -35,6 +37,10 @@ export function registerUsageFeature(app: ApiApp) {
   app.openapi(updateProjectAiBudgetRoute, updateProjectAiBudgetController);
   app.openapi(adjustWorkspaceCreditsRoute, adjustWorkspaceCreditsController);
   app.openapi(listNotificationsRoute, listNotificationsController);
+  app.openapi(
+    getNotificationsRealtimeTokenRoute,
+    getNotificationsRealtimeTokenController,
+  );
   app.openapi(markNotificationReadRoute, markNotificationReadController);
   app.openapi(
     markAllNotificationsReadRoute,

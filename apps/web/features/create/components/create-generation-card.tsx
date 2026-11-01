@@ -38,9 +38,7 @@ export function CreateGenerationCard({
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorTool, setEditorTool] = useState<"edit" | "resize">("edit");
   const queryClient = useQueryClient();
-  const live = useProjectGeneration(workspaceId, projectId, generation.id, {
-    pollWhileActive: true,
-  });
+  const live = useProjectGeneration(workspaceId, projectId, generation.id);
   const retry = useRetryProjectGeneration(
     workspaceId,
     projectId,

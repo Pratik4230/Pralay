@@ -10,6 +10,7 @@ import {
   getProjectGenerationResponseSchema,
   invalidGenerationInputAssetsError,
   projectNotFoundError,
+  realtimeSubscriptionTokenSchema,
   retryProjectGenerationResponseSchema,
   unauthorizedError,
   workspaceNotFoundError,
@@ -80,6 +81,30 @@ export const getProjectGenerationRoute = createRoute({
       description: "Generation",
       content: {
         "application/json": { schema: getProjectGenerationResponseSchema },
+      },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+    404: {
+      description: "Not found",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+  },
+});
+
+export const getProjectGenerationRealtimeTokenRoute = createRoute({
+  method: "get",
+  path: "/api/v1/workspaces/{id}/projects/{projectId}/generations/{generationId}/realtime-token",
+  tags: ["Generations"],
+  summary: "Create an authorized realtime generation subscription",
+  request: { params: generationParams },
+  responses: {
+    200: {
+      description: "Short-lived realtime subscription token",
+      content: {
+        "application/json": { schema: realtimeSubscriptionTokenSchema },
       },
     },
     401: {

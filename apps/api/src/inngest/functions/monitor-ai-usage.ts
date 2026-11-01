@@ -1,4 +1,5 @@
 import { inngest } from "../client.js";
+import { userNotificationsChannel } from "../channels.js";
 import {
   createAiUsageAlertNotifications,
   scanAiUsageAlerts,
@@ -44,6 +45,16 @@ export const deliverAiUsageAlert = inngest.createFunction(
     );
 
     for (const recipient of recipients) {
+      await step.run(`publish-ai-usage-alert-${recipient.id}`, async () => {
+        try {
+          await inngest.realtime.publish(
+            userNotificationsChannel(recipient.userId).notification,
+            { notificationId: recipient.id },
+          );
+        } catch {
+          // The notification is persisted and the client reconciles on connect.
+        }
+      });
       await step.run(`send-ai-usage-alert-email-${recipient.id}`, () =>
         sendAiUsageAlertEmail(recipient, alert),
       );

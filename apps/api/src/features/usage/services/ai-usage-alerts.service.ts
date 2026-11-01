@@ -185,7 +185,7 @@ export async function createAiUsageAlertNotifications(alert: AiUsageAlert) {
       ),
     );
 
-  const created: Array<{ id: string; email: string }> = [];
+  const created: Array<{ id: string; userId: string; email: string }> = [];
   for (const recipient of recipients) {
     const [notification] = await db
       .insert(notifications)
@@ -208,8 +208,13 @@ export async function createAiUsageAlertNotifications(alert: AiUsageAlert) {
       })
       .onConflictDoNothing({ target: notifications.dedupeKey })
       .returning({ id: notifications.id });
-    if (notification)
-      created.push({ id: notification.id, email: recipient.email });
+    if (notification) {
+      created.push({
+        id: notification.id,
+        userId: recipient.userId,
+        email: recipient.email,
+      });
+    }
   }
   return created;
 }

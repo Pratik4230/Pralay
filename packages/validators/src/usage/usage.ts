@@ -150,6 +150,10 @@ export const notificationMutationResponseSchema = z.object({
   ok: z.literal(true),
 });
 
+export const notificationRealtimeEventSchema = z.object({
+  notificationId: z.uuid(),
+});
+
 export type WorkspaceUsageSummary = z.infer<
   typeof workspaceUsageSummaryResponseSchema
 >;

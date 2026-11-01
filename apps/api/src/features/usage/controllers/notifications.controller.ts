@@ -3,10 +3,13 @@ import type { Context } from "hono";
 import {
   notificationListResponseSchema,
   notificationMutationResponseSchema,
+  realtimeSubscriptionTokenSchema,
   unauthorizedError,
 } from "@repo/validators";
 
 import type { AuthVariables } from "../../../global/middleware/session.js";
+import { userNotificationsChannel } from "../../../inngest/channels.js";
+import { createRealtimeSubscriptionToken } from "../../../inngest/realtime-token.js";
 import {
   listUserNotifications,
   markAllNotificationsRead,
@@ -25,6 +28,18 @@ export async function listNotificationsController(
     ),
     200,
   );
+}
+
+export async function getNotificationsRealtimeTokenController(
+  c: Context<{ Variables: AuthVariables }>,
+) {
+  const session = c.get("session");
+  if (!session) return c.json(unauthorizedError, 401);
+  const token = await createRealtimeSubscriptionToken(
+    userNotificationsChannel(session.user.id),
+    ["notification"],
+  );
+  return c.json(realtimeSubscriptionTokenSchema.parse(token), 200);
 }
 
 export async function markNotificationReadController(
